@@ -120,6 +120,43 @@ teste("filtroHistorico monta os filtros do PostgREST", () => {
   assert.ok(filtroHistorico({ desde: "2026-11-26T03:00:00.000Z" }).includes("registrado_em=gte.2026-11-26T03%3A00"));
 });
 
+teste("referência se acha sem espaço, ponto, barra ou traço", () => {
+  assert.equal(T.compacto(" 0 986-452.041 "), "0986452041");
+  const l = [{ id: 1, d: "Filtro de óleo", r: "0 986 452 041" }, { id: 2, d: "Graxa", r: "SKF LGWA 2/1" }];
+  assert.deepEqual(T.filtrar(l, "0986452041", (x) => [x.d, x.r]).map((x) => x.id), [1]);
+  assert.deepEqual(T.filtrar(l, "lgwa21", (x) => [x.d, x.r]).map((x) => x.id), [2]);
+  assert.deepEqual(T.filtrar(l, "ab", (x) => [x.d, x.r]).map((x) => x.id), [], "termo curto não casa por pedaço compacto");
+});
+
+teste("lista de frotas colada do Excel", () => {
+  const r = T.lerListaDeFrotas("Frota\tModelo\tPlaca\r\nc-433\tScania R450\tABC-1D23\nC-433\trepetida\n\nT-12; Volvo FH; XYZ9876\nM-07 - Munck Hyva\n  k  1 \n" + "X".repeat(21));
+  assert.deepEqual(r, [
+    { numero: "C-433", descricao: "Scania R450", placa: "ABC1D23" },
+    { numero: "T-12", descricao: "Volvo FH", placa: "XYZ9876" },
+    { numero: "M-07", descricao: "Munck Hyva", placa: null },
+    { numero: "K 1", descricao: null, placa: null },
+  ]);
+  assert.deepEqual(T.lerListaDeFrotas(""), []);
+});
+
+teste("filtroHistorico: frota e busca por referência e frota", () => {
+  assert.equal(filtroHistorico({ frotaId: "9" }), "&frota_id=eq.9");
+  const q = decodeURIComponent(filtroHistorico({ termo: "c-433" }));
+  assert.ok(q.includes('referencia.ilike."*c-433*"') && q.includes('frota.ilike."*c-433*"'), q);
+});
+
+teste("todo ícone usado nas telas existe", () => {
+  const ic = readFileSync(join(RAIZ, "js/icones.js"), "utf8");
+  const existentes = new Set([...ic.matchAll(/^  ([a-z]+): '/gm)].map((m) => m[1]));
+  for (const f of arquivos(join(RAIZ, "js"))) {
+    for (const m of readFileSync(f, "utf8").matchAll(/icone\("([a-z]+)"/g)) {
+      assert.ok(existentes.has(m[1]), `${relative(RAIZ, f)} usa o ícone "${m[1]}", que não existe`);
+    }
+  }
+  const app = readFileSync(join(RAIZ, "js/app.js"), "utf8");
+  for (const m of app.matchAll(/\["[a-z]*", "[^"]+", "([a-z]+)", \(\)/g)) assert.ok(existentes.has(m[1]), `menu: ícone "${m[1]}"`);
+});
+
 // ── o service worker guarda todos os arquivos do site ──
 function arquivos(dir) {
   return readdirSync(dir).flatMap((f) => {
