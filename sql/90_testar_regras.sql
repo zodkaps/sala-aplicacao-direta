@@ -241,6 +241,7 @@ begin
 
   select (select count(*) from public.pessoas) + (select count(*) from public.materiais)
        + (select count(*) from public.historico) + (select count(*) from public.estoque)
+       + (select count(*) from public.frotas)
        + (select count(*) from storage.objects where bucket_id = 'fotos') into n;
   if n <> 0 then raise exception using errcode = 'TFAIL', message = 'FALHOU: pendente enxerga ' || n || ' linhas'; end if;
   select count(*) into n from public.perfis;
