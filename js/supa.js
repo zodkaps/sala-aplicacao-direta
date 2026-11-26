@@ -109,6 +109,7 @@ export function traduzir(mensagem, codigo = "") {
   if (s.includes("materiais_descricao_unica")) return "Já existe um material com essa descrição.";
   if (s.includes("materiais_codigo_unico")) return "Já existe um material com esse código.";
   if (s.includes("movimentacoes_foto_key")) return "Essa foto já foi usada em outro registro. Tire outra.";
+  if (s.includes("frotas_numero_key")) return "Já existe uma frota com esse número.";
   if (s.includes("mime type") || s.includes("invalid_mime_type")) return "A foto precisa estar em JPEG.";
   if (s.includes("maximum allowed size") || s.includes("payload too large")) return "A foto ficou grande demais.";
   if (c === "23514" || s.includes("violates check constraint")) {
@@ -257,6 +258,22 @@ export async function inserir(tabela, linha) {
   });
   const j = await r.json();
   return Array.isArray(j) ? j[0] : j;
+}
+
+/** Insere várias linhas de uma vez. Com `ignorarRepetidas`, a que já existe
+ *  (pela coluna `conflito`) fica como está e não atrapalha as outras. */
+export async function inserirVarias(tabela, linhas, { conflito = "", ignorarRepetidas = false } = {}) {
+  if (!linhas.length) return [];
+  const q = conflito ? `?on_conflict=${encodeURIComponent(conflito)}` : "";
+  const r = await pedir(`${BASE}/rest/v1/${tabela}${q}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Prefer: `return=representation${ignorarRepetidas ? ",resolution=ignore-duplicates" : ""}`,
+    },
+    body: JSON.stringify(linhas),
+  });
+  return r.json();
 }
 
 /** Atualiza as linhas do filtro. Nenhuma linha alterada = o banco recusou. */

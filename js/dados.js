@@ -13,6 +13,7 @@ export const estado = {
   perfil: null,          // { id, nome, papel }
   pessoas: [],           // { id, nome, matricula, funcao, ativo }
   materiais: [],         // linhas da vista `estoque` (com saldo)
+  frotas: [],            // { id, numero, descricao, placa, ativo }
   carregadoEm: 0,
 };
 
@@ -54,21 +55,24 @@ export function cadastrosGuardados() {
   if (g && quem && g.dono === quem.id) {
     estado.pessoas = g.pessoas || [];
     estado.materiais = g.materiais || [];
+    estado.frotas = g.frotas || [];
     return true;
   }
   return false;
 }
 
 export async function carregarCadastros() {
-  const [pessoas, materiais] = await Promise.all([
+  const [pessoas, materiais, frotas] = await Promise.all([
     supa.lerTudo("pessoas?select=id,nome,matricula,funcao,ativo&order=nome,id"),
-    supa.lerTudo("estoque?select=id,codigo,descricao,unidade,minimo,local,ativo,saldo,movimentos,ultima&order=descricao,id"),
+    supa.lerTudo("estoque?select=id,codigo,referencia,descricao,unidade,minimo,local,ativo,saldo,movimentos,ultima&order=descricao,id"),
+    supa.lerTudo("frotas?select=id,numero,descricao,placa,ativo&order=numero,id"),
   ]);
   estado.pessoas = pessoas;
+  estado.frotas = frotas;
   estado.materiais = materiais.map((m) => ({ ...m, saldo: Number(m.saldo), minimo: Number(m.minimo) }));
   estado.carregadoEm = Date.now();
   const quem = supa.eu();
-  gravarLocal(GUARDA, { dono: quem && quem.id, pessoas: estado.pessoas, materiais: estado.materiais });
+  gravarLocal(GUARDA, { dono: quem && quem.id, pessoas: estado.pessoas, materiais: estado.materiais, frotas: estado.frotas });
 }
 
 /** Atualiza só se a cópia tiver mais de `idade` ms. */
@@ -77,13 +81,22 @@ export async function atualizarSeVelho(idade = 60000) {
 }
 
 export function esquecerTudo() {
-  estado.perfil = null; estado.pessoas = []; estado.materiais = []; estado.carregadoEm = 0;
+  estado.perfil = null; estado.pessoas = []; estado.materiais = []; estado.frotas = []; estado.carregadoEm = 0;
   gravarLocal(GUARDA, null);
   gravarLocal(GUARDA_PERFIL, null);
 }
 
 export const pessoaPorId = (id) => estado.pessoas.find((p) => p.id === id) || null;
 export const materialPorId = (id) => estado.materiais.find((m) => m.id === id) || null;
+export const frotaPorId = (id) => estado.frotas.find((f) => f.id === id) || null;
+
+export function guardarFrotas(lista) {
+  for (const f of lista) {
+    const i = estado.frotas.findIndex((x) => x.id === f.id);
+    if (i >= 0) estado.frotas[i] = { ...estado.frotas[i], ...f }; else estado.frotas.push(f);
+  }
+  estado.frotas.sort((a, b) => a.numero.localeCompare(b.numero, "pt-BR", { numeric: true }));
+}
 
 export function guardarPessoa(p) {
   const i = estado.pessoas.findIndex((x) => x.id === p.id);

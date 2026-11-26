@@ -8,17 +8,26 @@ export function normalizar(s) {
     .toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+/** Só letras e números: "0 986-452.041" → "0986452041". Referência de peça
+ *  aparece escrita de mil jeitos; assim todos se acham. */
+export function compacto(s) {
+  return normalizar(s).replace(/[^a-z0-9]/g, "");
+}
+
 /** Filtra e ordena uma lista pelo que foi digitado. Cada palavra digitada tem
- *  de aparecer em algum dos campos; vem primeiro o que COMEÇA com o termo. */
+ *  de aparecer em algum dos campos (ou o termo inteiro, sem espaço nem
+ *  pontuação, numa referência); vem primeiro o que COMEÇA com o termo. */
 export function filtrar(lista, termo, campos, limite = 30) {
   const palavras = normalizar(termo).split(" ").filter(Boolean);
   if (!palavras.length) return lista.slice(0, limite);
   const t = palavras.join(" ");
+  const tc = compacto(termo);
   const achados = [];
   for (const item of lista) {
     const textos = campos(item).filter(Boolean).map(normalizar);
     const tudo = textos.join(" ");
-    if (!palavras.every((p) => tudo.includes(p))) continue;
+    const porPalavra = palavras.every((p) => tudo.includes(p));
+    if (!porPalavra && !(tc.length >= 3 && textos.some((x) => compacto(x).includes(tc)))) continue;
     let nota = 3;
     if (textos.some((x) => x === t)) nota = 0;
     else if (textos.some((x) => x.startsWith(t))) nota = 1;
@@ -123,6 +132,41 @@ export function situacaoSaldo(saldo, minimo) {
   if (m > 0 && s <= m) return "baixo";
   if (s === 0) return "zerado";
   return "ok";
+}
+
+/** A lista de frotas colada do Excel (ou digitada), uma por linha:
+ *    C-433                          só o número
+ *    C-433 <tab> Scania R450 <tab> ABC1D23   colunas do Excel
+ *    C-433; Scania R450; ABC-1D23   ou com ponto e vírgula
+ *    C-433 - Scania R450            ou com " - "
+ *  A placa é reconhecida pelo formato (antigo ou Mercosul). Linha de
+ *  cabeçalho ("Frota", "Número") e repetida ficam de fora. */
+export function lerListaDeFrotas(texto) {
+  const PLACA = /^[A-Z]{3}-?\d[A-Z0-9]\d{2}$/;
+  const vistos = new Set();
+  const frotas = [];
+  for (const bruta of String(texto ?? "").split(/\r?\n/)) {
+    const linha = bruta.trim();
+    if (!linha) continue;
+    let partes = linha.includes("\t") ? linha.split("\t")
+      : linha.includes(";") ? linha.split(";")
+        : linha.split(/\s+[-–—]\s+/);
+    partes = partes.map((x) => x.trim()).filter(Boolean);
+    if (!partes.length) continue;
+    const numero = partes[0].toUpperCase().replace(/\s+/g, " ");
+    if (/^(FROTA|FROTAS|N[ÚU]MERO|NUMERO|N[ºO°]?)$/.test(numero) || numero.length > 20) continue;
+    if (vistos.has(numero)) continue;
+    vistos.add(numero);
+    let placa = null;
+    const resto = [];
+    for (const x of partes.slice(1)) {
+      const p = x.toUpperCase().replace(/\s/g, "");
+      if (!placa && PLACA.test(p)) placa = p.replace("-", "");
+      else resto.push(x);
+    }
+    frotas.push({ numero, descricao: resto.join(" · ").slice(0, 80) || null, placa });
+  }
+  return frotas;
 }
 
 export const PAPEIS = {
