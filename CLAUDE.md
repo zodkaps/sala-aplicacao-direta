@@ -18,6 +18,24 @@ Supabase (projeto "Sala de Aplicação Direta", `ogaaapaondalugvezdtd`). O
   não entram no repositório (é público): teste usa dado inventado.
 - Foto de verdade da sala não vai para o repositório nem para o chat.
 
+## Frotas e material
+
+- A lista de frotas é cadastro do administrador (menu → Frotas, uma a uma ou
+  colando do Excel). Número de frota não entra no repositório: teste usa
+  número inventado. A lista oficial é a "Frotas do PCM" do painel de
+  programação; a fita de eventos de lá tem os números escritos de vários jeitos
+  e não serve de fonte sem a pessoa conferir.
+- Toda saída diz onde vai ser aplicada: `frota_id` ou `destino` (a tela exige um
+  dos dois). Entrada não tem frota (`entrada_sem_frota`).
+- O material tem `referencia` (do fabricante) e `codigo` (Protheus).
+
+## Visual
+
+Padrão Makro, o mesmo do painel de programação (`gestaomkt`): azul-marinho
+#13164E na estrutura, vermelho #E4002A só para alerta, Metropolis nos títulos e
+Nunito no texto, cinza como base e a situação num ponto colorido. Claro por
+padrão, escuro no ◐. Cor nova vai como variável no `:root` do `css/app.css`.
+
 ## Segurança
 
 - Texto de gente entra na tela por `el()` (nós de texto), nunca como HTML.
