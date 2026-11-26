@@ -10,7 +10,9 @@ import * as supa from "../supa.js";
 import * as D from "../dados.js";
 import { prepararFoto, novoId } from "../foto.js";
 import { caminhoFoto, miniaturaDe, lerQuantidade, formatarQtd, normalizar } from "../texto.js";
-import { seletor, detalheMaterial, detalhePessoa, dialogoMaterial, dialogoPessoa } from "./comum.js";
+import {
+  seletor, detalheMaterial, detalhePessoa, detalheFrota, dialogoMaterial, dialogoPessoa, dialogoFrota,
+} from "./comum.js";
 
 const GUARDA_RESP = "sad.responsavel";
 
@@ -41,6 +43,7 @@ export function telaRegistrar(raiz, tipo, ctx) {
     foto: null, caminho: null, envio: null,
     material: inicial && inicial.ativo ? inicial : null,
     retirante: null,
+    frota: null,
     responsavel: responsavelPadrao(),
   };
   const enviadas = new Set();
@@ -114,8 +117,8 @@ export function telaRegistrar(raiz, tipo, ctx) {
   const unidade = el("span", { class: "unidade" });
   const saldoAviso = el("p", { class: "saldo-aviso", hidden: true });
   const selMaterial = seletor({
-    titulo: "Material", vazio: "Digite o nome ou o código", tipoRecente: "material",
-    itens: () => D.estado.materiais, campos: (m) => [m.descricao, m.codigo, m.local],
+    titulo: "Material", vazio: "Nome, referência ou código Protheus", tipoRecente: "material",
+    itens: () => D.estado.materiais, campos: (m) => [m.descricao, m.referencia, m.codigo, m.local],
     rotulo: (m) => m.descricao, detalhe: detalheMaterial, valor: f.material,
     aoMudar: (m) => { f.material = m; mostrarUnidade(); if (m) { secMaterial.classList.remove("falta"); limparErro(); } },
     criar: (termo) => dialogoMaterial({ descricao: termo }), textoCriar: "Cadastrar material",
@@ -167,6 +170,22 @@ export function telaRegistrar(raiz, tipo, ctx) {
   const secRetirante = saida ? el("section", { class: "passo" },
     el("h2", {}, el("span", { class: "num" }, "4"), "Quem está retirando"), selRetirante.raiz) : null;
 
+  // Onde a peça vai ser aplicada: a frota da lista, ou outro lugar escrito.
+  const destino = el("input", { type: "text", maxlength: 80, autocomplete: "off", placeholder: "Ex.: oficina, compressor, eixo traseiro" });
+  destino.addEventListener("input", () => { if (destino.value.trim()) { secOnde.classList.remove("falta"); limparErro(); } });
+  const selFrota = saida ? seletor({
+    titulo: "Frota", vazio: "Número da frota", tipoRecente: "frota",
+    itens: () => D.estado.frotas, campos: (x) => [x.numero, x.descricao, x.placa],
+    rotulo: (x) => `Frota ${x.numero}`, detalhe: detalheFrota,
+    aoMudar: (x) => { f.frota = x; if (x) { secOnde.classList.remove("falta"); limparErro(); } },
+    criar: () => dialogoFrota({}), podeCriar: () => D.ehAdmin(), textoCriar: "Cadastrar frota",
+  }) : null;
+  const secOnde = saida ? el("section", { class: "passo" },
+    el("h2", {}, el("span", { class: "num" }, "5"), "Onde vai ser aplicada"),
+    selFrota.raiz,
+    campo("Outro local ou complemento", destino,
+      "Se não for frota: oficina, compressor… Se for, a posição (opcional).")) : null;
+
   const selResp = seletor({
     ...opcoesPessoa, tipoRecente: "responsavel", valor: f.responsavel,
     titulo: saida ? "Quem acompanhou a retirada" : "Quem recebeu",
@@ -174,17 +193,15 @@ export function telaRegistrar(raiz, tipo, ctx) {
     aoMudar: (p) => { f.responsavel = p; if (p) { secResp.classList.remove("falta"); limparErro(); } },
   });
   const secResp = el("section", { class: "passo" },
-    el("h2", {}, el("span", { class: "num" }, saida ? "5" : "4"), saida ? "Quem acompanhou a retirada" : "Quem recebeu o material"),
+    el("h2", {}, el("span", { class: "num" }, saida ? "6" : "4"), saida ? "Quem acompanhou a retirada" : "Quem recebeu o material"),
     selResp.raiz);
 
   // ── 6. o resto (opcional) ──
-  const destino = el("input", { type: "text", maxlength: 80, autocomplete: "off", placeholder: "Ex.: Frota 433, OS 12345, compressor" });
   const entreguePor = el("input", { type: "text", maxlength: 80, autocomplete: "off", placeholder: "Fornecedor ou quem trouxe" });
   const documento = el("input", { type: "text", maxlength: 40, autocomplete: "off", placeholder: "Nota fiscal, requisição…" });
   const obs = el("textarea", { rows: 2, maxlength: 300 });
   const secExtra = el("section", { class: "passo" },
-    el("h2", {}, el("span", { class: "num" }, saida ? "6" : "5"), "Detalhes ", el("small", {}, "(opcional)")),
-    saida ? campo("Para onde vai (frota, OS, equipamento)", destino) : null,
+    el("h2", {}, el("span", { class: "num" }, saida ? "7" : "5"), "Detalhes ", el("small", {}, "(opcional)")),
     !saida ? campo("Entregue por", entreguePor) : null,
     !saida ? campo("Documento", documento) : null,
     campo("Observação", obs));
@@ -204,8 +221,9 @@ export function telaRegistrar(raiz, tipo, ctx) {
     if (!f.material) faltas.push([secMaterial, "o material"]);
     if (!(q > 0)) faltas.push([secQtd, "a quantidade"]);
     if (saida && !f.retirante) faltas.push([secRetirante, "quem está retirando"]);
+    if (saida && !f.frota && !destino.value.trim()) faltas.push([secOnde, "onde vai ser aplicada"]);
     if (!f.responsavel) faltas.push([secResp, saida ? "quem acompanhou" : "quem recebeu"]);
-    for (const s of [secFoto, secMaterial, secQtd, secRetirante, secResp]) if (s) s.classList.remove("falta");
+    for (const s of [secFoto, secMaterial, secQtd, secRetirante, secOnde, secResp]) if (s) s.classList.remove("falta");
     if (faltas.length) {
       for (const [s] of faltas) s.classList.add("falta");
       mostrarErro(`Falta ${juntar(faltas.map((x) => x[1]))}.`);
@@ -225,7 +243,11 @@ export function telaRegistrar(raiz, tipo, ctx) {
       tipo, material_id: f.material.id, quantidade: q, foto: f.caminho,
       responsavel_id: f.responsavel.id, obs: obs.value.trim() || null,
     };
-    if (saida) { linha.retirante_id = f.retirante.id; linha.destino = destino.value.trim() || null; }
+    if (saida) {
+      linha.retirante_id = f.retirante.id;
+      linha.frota_id = f.frota ? f.frota.id : null;
+      linha.destino = destino.value.trim() || null;
+    }
     else { linha.entregue_por = entreguePor.value.trim() || null; linha.documento = documento.value.trim() || null; }
 
     try {
@@ -261,6 +283,7 @@ export function telaRegistrar(raiz, tipo, ctx) {
       el("p", { class: "resumo" }, `${formatarQtd(q)} ${m.unidade} · ${m.descricao}`),
       el("p", {}, saida
         ? `Retirou: ${f.retirante.nome} · Acompanhou: ${f.responsavel.nome}`
+          + (f.frota ? ` · Frota ${f.frota.numero}` : destino.value.trim() ? ` · ${destino.value.trim()}` : "")
         : `Recebeu: ${f.responsavel.nome}`),
       el("p", { class: "saldo-agora" }, `Saldo agora: ${formatarQtd(m.saldo)} ${m.unidade}`),
       el("div", { class: "acoes coluna" },
@@ -274,14 +297,14 @@ export function telaRegistrar(raiz, tipo, ctx) {
     el("div", { class: `cabeca-registro ${tipo}` },
       el("h1", {}, saida ? "Saída de material" : "Entrada de material"),
       el("p", {}, saida ? "Material saindo da sala de aplicação direta." : "Material chegando na sala de aplicação direta.")),
-    secFoto, secMaterial, secQtd, secRetirante, secResp, secExtra,
+    secFoto, secMaterial, secQtd, secRetirante, secOnde, secResp, secExtra,
     el("div", { class: "rodape-acao" }, erroCaixa, botao),
   ].filter(Boolean)); // append(null) escreveria "null" na tela
 
   return {
     parar() { if (f.foto) URL.revokeObjectURL(f.foto.previa); },
     async podeSair() {
-      if (registrado || !(f.foto || f.material || f.retirante)) return true;
+      if (registrado || !(f.foto || f.material || f.retirante || f.frota)) return true;
       return confirmar(saida ? "Descartar esta saída sem registrar?" : "Descartar esta entrada sem registrar?",
         { sim: "Descartar", nao: "Continuar preenchendo", perigo: true });
     },
