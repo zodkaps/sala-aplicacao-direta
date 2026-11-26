@@ -280,12 +280,12 @@ input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--marca); 
 
 .numeros { display: grid; grid-template-columns: repeat(3, 1fr); gap: .6rem; margin-top: .75rem; }
 .numero {
-  display: flex; flex-direction: column-reverse; justify-content: flex-end; gap: .2rem; padding: .75rem .85rem;
+  display: flex; flex-direction: column-reverse; gap: .2rem; padding: .75rem .85rem;
   border-radius: var(--raio); background: var(--cartao); border: 1px solid var(--linha); box-shadow: var(--sombra);
   color: var(--texto); text-decoration: none;
 }
 .numero strong { font-size: 1.7rem; line-height: 1.05; }
-.numero span { color: var(--suave); font-size: .8rem; font-weight: 700; }
+.numero span { color: var(--suave); font-size: .8rem; font-weight: 700; margin-bottom: auto; }  /* o número fica embaixo, alinhado nos três */
 .numero.alerta span::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: var(--aviso); vertical-align: 1px; }
 
 /* ── listas de movimentação ──────────────────────────────────────────────── */
