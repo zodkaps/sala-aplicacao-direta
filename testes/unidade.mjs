@@ -128,11 +128,11 @@ function arquivos(dir) {
   });
 }
 
-teste("sw.js lista todo arquivo de js/, css/ e img/ (e só arquivos que existem)", () => {
+teste("sw.js lista todo arquivo de js/, css/, img/ e fontes/ (e só arquivos que existem)", () => {
   const sw = readFileSync(join(RAIZ, "sw.js"), "utf8");
   const lista = [...sw.matchAll(/"\.\/([^"]*)"/g)].map((m) => m[1]).filter(Boolean);
-  for (const d of ["js", "css", "img"]) {
-    for (const f of arquivos(join(RAIZ, d))) {
+  for (const d of ["js", "css", "img", "fontes"]) {
+    for (const f of arquivos(join(RAIZ, d)).filter((x) => !x.endsWith(".txt"))) {
       const r = relative(RAIZ, f).split("\\").join("/");
       assert.ok(lista.includes(r), `falta no sw.js: ${r}`);
     }

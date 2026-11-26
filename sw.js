@@ -8,7 +8,7 @@
 // Mudou um arquivo? Mantenha a lista abaixo em dia e suba a VERSAO — o
 // testes/unidade.mjs acusa arquivo de js/ ou css/ que falte na lista.
 
-const VERSAO = "sad-v2";
+const VERSAO = "sad-v3";
 const ARQUIVOS = [
   "./",
   "./index.html",
@@ -17,6 +17,12 @@ const ARQUIVOS = [
   "./img/icone-180.png",
   "./img/icone-192.png",
   "./img/icone-512.png",
+  "./img/makro.svg",
+  "./img/makro-branco.svg",
+  "./fontes/metropolis-400.woff2",
+  "./fontes/metropolis-600.woff2",
+  "./fontes/metropolis-700.woff2",
+  "./fontes/nunito-latin.woff2",
   "./css/app.css",
   "./js/app.js",
   "./js/config.js",
@@ -25,6 +31,7 @@ const ARQUIVOS = [
   "./js/ui.js",
   "./js/texto.js",
   "./js/foto.js",
+  "./js/icones.js",
   "./js/telas/comum.js",
   "./js/telas/entrar.js",
   "./js/telas/inicio.js",
@@ -32,6 +39,7 @@ const ARQUIVOS = [
   "./js/telas/historico.js",
   "./js/telas/estoque.js",
   "./js/telas/pessoas.js",
+  "./js/telas/frotas.js",
   "./js/telas/acessos.js",
   "./js/telas/conta.js",
 ];
