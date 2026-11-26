@@ -159,6 +159,7 @@ input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--marca); 
 .acoes { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: .8rem; }
 .acoes > * { flex: 1 1 140px; }
 .acoes.coluna { flex-direction: column; }
+.acoes.coluna > * { flex: 0 0 auto; }
 .cartao { background: var(--cartao); border: 1px solid var(--borda); border-radius: var(--raio); padding: 1rem; box-shadow: var(--sombra); }
 .cartao .botao + .botao { margin-top: .5rem; }
 .nada { color: var(--suave); text-align: center; padding: 1.5rem .5rem; }
