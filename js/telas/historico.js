@@ -35,7 +35,7 @@ export function telaHistorico(raiz, ctx) {
   periodo.addEventListener("change", () => { f.periodo = periodo.value; lista.recarregar(); });
 
   const busca = el("input", {
-    type: "search", class: "busca", placeholder: "Buscar material, pessoa, frota, nota…",
+    type: "search", class: "busca", placeholder: "Buscar material, referência, frota, pessoa, nota…",
     "aria-label": "Buscar", enterkeyhint: "search", autocomplete: "off",
   });
   busca.addEventListener("input", adiar(() => { f.termo = busca.value; lista.recarregar(); }, 350));
@@ -55,13 +55,14 @@ export function telaHistorico(raiz, ctx) {
       }
       if (!linhas.length) { aviso("Não há movimentações com esses filtros.", "alerta"); return; }
       const conteudo = paraCSV(
-        ["Data", "Tipo", "Material", "Código", "Quantidade", "Unidade", "Retirou", "Matrícula",
-          "Acompanhou / Recebeu", "Destino", "Entregue por", "Documento", "Observação",
+        ["Data", "Tipo", "Material", "Referência do fabricante", "Código Protheus", "Quantidade", "Unidade",
+          "Retirou", "Matrícula", "Frota", "Frota (descrição)", "Outro local / complemento",
+          "Acompanhou / Recebeu", "Entregue por", "Documento", "Observação",
           "Registrado por", "Situação", "Motivo do cancelamento", "Foto (arquivo)"],
         linhas.map((m) => [
-          dataHora(m.registrado_em), m.tipo === "saida" ? "Saída" : "Entrada", m.material, m.codigo,
-          formatarQtd(m.quantidade), m.unidade, m.retirante, m.retirante_matricula, m.responsavel,
-          m.destino, m.entregue_por, m.documento, m.obs, m.registrado_por_nome,
+          dataHora(m.registrado_em), m.tipo === "saida" ? "Saída" : "Entrada", m.material, m.referencia, m.codigo,
+          formatarQtd(m.quantidade), m.unidade, m.retirante, m.retirante_matricula, m.frota, m.frota_descricao,
+          m.destino, m.responsavel, m.entregue_por, m.documento, m.obs, m.registrado_por_nome,
           m.cancelada_em ? `Cancelada em ${dataHora(m.cancelada_em)} por ${m.cancelada_por_nome || "—"}` : "Válida",
           m.motivo_cancelamento, m.foto,
         ]));

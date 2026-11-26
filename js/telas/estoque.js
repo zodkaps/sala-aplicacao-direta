@@ -17,7 +17,7 @@ export function telaEstoque(raiz, ctx) {
     let lista = D.estado.materiais.filter((m) => f.inativos || m.ativo);
     if (f.ver === "baixo") lista = lista.filter((m) => ["baixo", "negativo"].includes(situacaoSaldo(m.saldo, m.minimo)));
     if (f.ver === "divergencia") lista = lista.filter((m) => situacaoSaldo(m.saldo, m.minimo) === "negativo");
-    if (f.termo.trim()) lista = filtrar(lista, f.termo, (m) => [m.descricao, m.codigo, m.local], 500);
+    if (f.termo.trim()) lista = filtrar(lista, f.termo, (m) => [m.descricao, m.referencia, m.codigo, m.local], 500);
     resumo.textContent = `${lista.length} ${lista.length === 1 ? "material" : "materiais"}`;
     corpo.replaceChildren(...(lista.length ? lista.map(linhaMaterial)
       : [el("p", { class: "nada" }, D.estado.materiais.length ? "Nenhum material com esse filtro." : "Nenhum material cadastrado ainda.")]));
@@ -35,7 +35,7 @@ export function telaEstoque(raiz, ctx) {
     }, t));
   const inativos = el("input", { type: "checkbox" });
   inativos.addEventListener("change", () => { f.inativos = inativos.checked; desenhar(); });
-  const busca = el("input", { type: "search", class: "busca", placeholder: "Buscar material ou código", "aria-label": "Buscar material", autocomplete: "off" });
+  const busca = el("input", { type: "search", class: "busca", placeholder: "Buscar material, referência ou código", "aria-label": "Buscar material", autocomplete: "off" });
   busca.addEventListener("input", adiar(() => { f.termo = busca.value; desenhar(); }, 150));
 
   const novo = D.podeRegistrar()
@@ -59,7 +59,8 @@ function linhaMaterial(m) {
   return el("a", { href: `#/material/${m.id}`, class: `linha-material ${sit}${m.ativo ? "" : " inativo"}` },
     el("span", { class: "lm-texto" },
       el("strong", {}, m.descricao),
-      el("small", {}, [m.codigo ? `cód. ${m.codigo}` : "", m.local || "", m.minimo ? `mín. ${formatarQtd(m.minimo)}` : "",
+      el("small", {}, [m.referencia ? `ref. ${m.referencia}` : "", m.codigo ? `Protheus ${m.codigo}` : "",
+        m.local || "", m.minimo ? `mín. ${formatarQtd(m.minimo)}` : "",
         m.ativo ? "" : "desativado"].filter(Boolean).join(" · ") || " ")),
     el("span", { class: "lm-saldo" },
       el("strong", {}, formatarQtd(m.saldo)), el("small", {}, m.unidade),
@@ -85,7 +86,7 @@ export function telaMaterial(raiz, ctx) {
         el("strong", {}, formatarQtd(m.saldo)), el("span", {}, m.unidade),
         ROTULO_SITUACAO[sit] ? el("span", { class: `etiqueta ${sit}` }, ROTULO_SITUACAO[sit]) : null),
       el("dl", { class: "ficha" },
-        ...[["Código", m.codigo], ["Onde fica", m.local], ["Estoque mínimo", m.minimo ? `${formatarQtd(m.minimo)} ${m.unidade}` : ""],
+        ...[["Referência do fabricante", m.referencia], ["Código Protheus", m.codigo], ["Onde fica", m.local], ["Estoque mínimo", m.minimo ? `${formatarQtd(m.minimo)} ${m.unidade}` : ""],
           ["Última movimentação", quando(m.ultima)], ["Situação", m.ativo ? "Ativo" : "Desativado"]]
           .filter(([, v]) => v).flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)])),
       el("div", { class: "acoes" },
