@@ -10,9 +10,12 @@ import {
 
 export const detalheMaterial = (m) => [
   `Saldo: ${formatarQtd(m.saldo)} ${m.unidade}`,
-  m.codigo ? `cód. ${m.codigo}` : "",
+  m.referencia ? `ref. ${m.referencia}` : "",
+  m.codigo ? `Protheus ${m.codigo}` : "",
   m.local || "",
 ].filter(Boolean).join(" · ");
+
+export const detalheFrota = (f) => [f.descricao || "", f.placa || ""].filter(Boolean).join(" · ");
 
 export const detalhePessoa = (p) => [p.matricula ? `mat. ${p.matricula}` : "", p.funcao || ""]
   .filter(Boolean).join(" · ");
@@ -67,7 +70,7 @@ export function seletor(o) {
         filhos.push(el("button", { type: "button", class: "opcao", onclick: () => escolher(i) },
           el("strong", {}, o.rotulo(i)), det ? el("small", {}, det) : null));
       }
-      if (o.criar && D.podeRegistrar()) {
+      if (o.criar && (o.podeCriar ? o.podeCriar() : D.podeRegistrar())) {
         filhos.push(el("button", {
           type: "button", class: "opcao nova",
           onclick: async () => { const novo = await o.criar(termo); if (novo) escolher(novo); },
@@ -98,7 +101,8 @@ export function dialogoMaterial(inicial = {}) {
     const unidade = el("select", {},
       ...[...new Set([...(inicial.unidade ? [inicial.unidade] : []), ...UNIDADES])]
         .map((u) => el("option", { value: u, selected: u === (inicial.unidade || "UN") }, u)));
-    const codigo = texto(inicial.codigo, { maxlength: 30, inputmode: "text" });
+    const referencia = texto(inicial.referencia, { maxlength: 60, placeholder: "Ex.: 0 986 452 041" });
+    const codigo = texto(inicial.codigo, { maxlength: 30, inputmode: "text", placeholder: "Ex.: 000123456" });
     const local = texto(inicial.local, { maxlength: 60, placeholder: "Ex.: Prateleira 3" });
     const minimo = texto(inicial.minimo ? String(inicial.minimo).replace(".", ",") : "", { inputmode: "decimal", placeholder: "0" });
     const ativo = el("input", { type: "checkbox", checked: inicial.ativo !== false });
@@ -113,6 +117,7 @@ export function dialogoMaterial(inicial = {}) {
       if (!Number.isFinite(min) || min < 0) { erro.textContent = "O estoque mínimo tem de ser um número."; erro.hidden = false; return; }
       const linha = {
         descricao: descricao.value.trim(), unidade: unidade.value,
+        referencia: referencia.value.trim() || null,
         codigo: codigo.value.trim() || null, local: local.value.trim() || null, minimo: min,
       };
       if (editar) linha.ativo = ativo.checked;
@@ -133,8 +138,9 @@ export function dialogoMaterial(inicial = {}) {
     setTimeout(() => descricao.focus(), 50);
     return el("form", { class: "formulario", onsubmit: enviar },
       campo("Descrição", descricao),
+      campo("Referência do fabricante", referencia, "O número da peça no catálogo do fabricante. Opcional"),
+      campo("Código Protheus", codigo, "Opcional"),
       el("div", { class: "dupla" }, campo("Unidade", unidade), campo("Estoque mínimo", minimo)),
-      campo("Código (Protheus ou outro)", codigo, "Opcional"),
       campo("Onde fica na sala", local, "Opcional"),
       editar && D.ehAdmin() ? el("label", { class: "marcar" }, ativo, " Ativo (desmarque para tirar das listas)") : null,
       erro,
@@ -184,14 +190,57 @@ export function dialogoPessoa(inicial = {}) {
   });
 }
 
+export function dialogoFrota(inicial = {}) {
+  const editar = inicial.id != null;
+  return janela(editar ? "Editar frota" : "Cadastrar frota", (fechar) => {
+    const numero = texto(inicial.numero, { maxlength: 20, autocapitalize: "characters", placeholder: "Ex.: C-433" });
+    const descricao = texto(inicial.descricao, { maxlength: 80, placeholder: "Ex.: Scania R450 · cavalo" });
+    const placa = texto(inicial.placa, { maxlength: 10, autocapitalize: "characters", placeholder: "Ex.: ABC1D23" });
+    const ativo = el("input", { type: "checkbox", checked: inicial.ativo !== false });
+    const erro = el("p", { class: "erro-campo", hidden: true });
+    const salvar = el("button", { type: "submit", class: "botao primario" }, editar ? "Salvar" : "Cadastrar");
+
+    async function enviar(ev) {
+      ev.preventDefault();
+      erro.hidden = true;
+      if (!numero.value.trim()) { erro.textContent = "Escreva o número da frota."; erro.hidden = false; return; }
+      const linha = { numero: numero.value.trim(), descricao: descricao.value.trim() || null, placa: placa.value.trim() || null };
+      if (editar) linha.ativo = ativo.checked;
+      const soltar = ocupar(salvar, "Salvando…");
+      try {
+        const r = editar
+          ? await supa.atualizar("frotas", `id=eq.${inicial.id}`, linha)
+          : await supa.inserir("frotas", linha);
+        D.guardarFrotas([r]);
+        aviso(editar ? "Frota atualizada." : "Frota cadastrada.");
+        fechar(D.frotaPorId(r.id));
+      } catch (e) {
+        soltar();
+        erro.textContent = e.message; erro.hidden = false;
+      }
+    }
+
+    setTimeout(() => numero.focus(), 50);
+    return el("form", { class: "formulario", onsubmit: enviar },
+      campo("Número da frota", numero),
+      campo("Descrição", descricao, "Modelo, tipo do equipamento. Opcional"),
+      campo("Placa", placa, "Opcional"),
+      editar ? el("label", { class: "marcar" }, ativo, " Ativa (desmarque para tirar das listas)") : null,
+      erro,
+      el("div", { class: "acoes" },
+        el("button", { type: "button", class: "botao", onclick: () => fechar(null) }, "Voltar"), salvar));
+  });
+}
+
 // ── as movimentações ───────────────────────────────────────────────────────
 
 /** Os filtros da vista `historico`, em formato de endereço do PostgREST. */
-export function filtroHistorico({ tipo, desde, termo, materialId, pessoaId } = {}) {
+export function filtroHistorico({ tipo, desde, termo, materialId, pessoaId, frotaId } = {}) {
   let q = "";
   if (tipo === "saida" || tipo === "entrada") q += `&tipo=eq.${tipo}`;
   if (desde) q += `&registrado_em=gte.${encodeURIComponent(desde)}`;
   if (materialId) q += `&material_id=eq.${Number(materialId)}`;
+  if (frotaId) q += `&frota_id=eq.${Number(frotaId)}`;
   if (pessoaId) {
     const p = Number(pessoaId);
     q += `&or=(retirante_id.eq.${p},responsavel_id.eq.${p})`;
@@ -199,7 +248,7 @@ export function filtroHistorico({ tipo, desde, termo, materialId, pessoaId } = {
     const t = termoSeguro(termo);
     if (t) {
       const v = encodeURIComponent(`"*${t}*"`);
-      const cols = ["material", "codigo", "retirante", "responsavel", "destino", "documento", "entregue_por"];
+      const cols = ["material", "referencia", "codigo", "frota", "retirante", "responsavel", "destino", "documento", "entregue_por"];
       q += `&or=(${cols.map((c) => `${c}.ilike.${v}`).join(",")})`;
     }
   }
@@ -208,8 +257,9 @@ export function filtroHistorico({ tipo, desde, termo, materialId, pessoaId } = {
 
 export function cartaoMovimento(m, aoAbrir) {
   const saida = m.tipo === "saida";
+  const onde = [m.frota ? `Frota ${m.frota}` : "", m.destino || ""].filter(Boolean).join(" · ");
   const quem = saida
-    ? `${m.retirante || "—"}${m.destino ? " → " + m.destino : ""}`
+    ? `${m.retirante || "—"}${onde ? " → " + onde : ""}`
     : `Recebeu: ${m.responsavel}${m.entregue_por ? " · de " + m.entregue_por : ""}`;
   return el("button", {
     type: "button", class: `mov ${m.tipo}${m.cancelada_em ? " cancelada" : ""}`, onclick: () => aoAbrir(m),
@@ -220,7 +270,7 @@ export function cartaoMovimento(m, aoAbrir) {
       el("span", { class: `etiqueta ${m.tipo}` }, saida ? "SAÍDA" : "ENTRADA"),
       el("strong", { class: "qtd" }, `${formatarQtd(m.quantidade)} ${m.unidade}`),
       m.cancelada_em ? el("span", { class: "etiqueta cancelada" }, "CANCELADA") : null),
-    el("span", { class: "material" }, m.material),
+    el("span", { class: "material" }, m.material, m.referencia ? el("small", { class: "ref" }, ` · ${m.referencia}`) : null),
     el("span", { class: "quem" }, quem),
     el("small", { class: "quando" }, saida ? `${quando(m.registrado_em)} · acompanhou ${m.responsavel}` : quando(m.registrado_em))));
 }
@@ -257,13 +307,16 @@ export function abrirMovimento(m, aoMudar) {
     }).catch(() => { foto.alt = "Sem conexão para abrir a foto."; });
 
     const linhas = [
-      ["Material", `${m.material}${m.codigo ? ` (cód. ${m.codigo})` : ""}`],
+      ["Material", m.material],
+      m.referencia ? ["Referência", m.referencia] : null,
+      m.codigo ? ["Código Protheus", m.codigo] : null,
       ["Quantidade", `${formatarQtd(m.quantidade)} ${m.unidade}`],
       saida ? ["Retirou", `${m.retirante}${m.retirante_matricula ? ` (mat. ${m.retirante_matricula})` : ""}`] : null,
+      m.frota ? ["Frota", [m.frota, m.frota_descricao].filter(Boolean).join(" · ")] : null,
       [saida ? "Acompanhou" : "Recebeu", m.responsavel],
       m.entregue_por ? ["Entregue por", m.entregue_por] : null,
       m.documento ? ["Documento", m.documento] : null,
-      m.destino ? ["Destino", m.destino] : null,
+      m.destino ? [m.frota ? "Local" : "Destino", m.destino] : null,
       m.obs ? ["Observação", m.obs] : null,
       ["Registrado", `${dataHora(m.registrado_em)} por ${m.registrado_por_nome || "—"}`],
       m.cancelada_em ? ["Cancelado", `${dataHora(m.cancelada_em)} por ${m.cancelada_por_nome || "—"} — ${m.motivo_cancelamento}`] : null,
