@@ -2,6 +2,8 @@
 // As telas mudam pelo endereço depois do "#": #/saida, #/material/12…
 
 import { el, $, aviso, janela } from "./ui.js";
+import { icone } from "./icones.js";
+import { PAPEIS } from "./texto.js";
 import * as supa from "./supa.js";
 import * as D from "./dados.js";
 import { telaEntrar, telaAguardando } from "./telas/entrar.js";
@@ -12,6 +14,7 @@ import { telaEstoque, telaMaterial } from "./telas/estoque.js";
 import { telaPessoas, telaPessoa } from "./telas/pessoas.js";
 import { telaAcessos, contarPendentes } from "./telas/acessos.js";
 import { telaConta } from "./telas/conta.js";
+import { telaFrotas, telaFrota } from "./telas/frotas.js";
 
 const ROTAS = [
   [/^$/, "Início", telaInicio],
@@ -22,17 +25,53 @@ const ROTAS = [
   [/^material\/(\d+)$/, "Material", telaMaterial],
   [/^pessoas$/, "Pessoas", telaPessoas],
   [/^pessoa\/(\d+)$/, "Pessoa", telaPessoa],
+  [/^frotas$/, "Frotas", telaFrotas],
+  [/^frota\/(\d+)$/, "Frota", telaFrota],
   [/^acessos$/, "Acessos", telaAcessos],
   [/^conta$/, "Minha conta", telaConta],
 ];
 
-const ABAS = [
-  ["", "Início", "⌂", () => true],
-  ["saida", "Saída", "↑", () => D.podeRegistrar()],
-  ["entrada", "Entrada", "↓", () => D.podeRegistrar()],
-  ["estoque", "Estoque", "▦", () => true],
-  ["historico", "Histórico", "☰", () => true],
+// O menu: no celular, as cinco primeiras viram a barra de baixo e o resto vai
+// para o "Menu"; no computador e no tablet deitado, tudo fica na barra lateral.
+const MENU = [
+  ["Movimento", [
+    ["", "Início", "inicio", () => true, true],
+    ["saida", "Saída", "saida", () => D.podeRegistrar(), true],
+    ["entrada", "Entrada", "entrada", () => D.podeRegistrar(), true],
+    ["historico", "Histórico", "historico", () => true, true],
+  ]],
+  ["Cadastros", [
+    ["estoque", "Estoque", "estoque", () => true, true],
+    ["frotas", "Frotas", "caminhao", () => true, false],
+    ["pessoas", "Pessoas", "pessoas", () => true, false],
+  ]],
+  ["Gestão", [
+    ["acessos", "Acessos", "chave", () => D.ehAdmin(), false],
+    ["conta", "Minha conta", "pessoa", () => true, false],
+  ]],
 ];
+const itensDoMenu = () => MENU.flatMap(([, itens]) => itens).filter((i) => i[3]());
+
+// Claro é o padrão (como no painel de programação); o escuro fica no botão ◐.
+const GUARDA_TEMA = "sad.tema";
+function aplicarTema(tema) {
+  document.documentElement.dataset.tema = tema === "escuro" ? "escuro" : "claro";
+  const cor = tema === "escuro" ? "#0d0d0d" : "#13164E";
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", cor);
+}
+function trocarTema() {
+  const novo = document.documentElement.dataset.tema === "escuro" ? "claro" : "escuro";
+  aplicarTema(novo);
+  try { localStorage.setItem(GUARDA_TEMA, novo); } catch { /* segue */ }
+}
+try { aplicarTema(localStorage.getItem(GUARDA_TEMA) || "claro"); } catch { aplicarTema("claro"); }
+
+/** A tela de cada item do menu, para marcar o ativo também nas páginas de dentro. */
+function rotaDoMenu(caminho) {
+  const raiz = caminho.split("/")[0];
+  return { material: "estoque", frota: "frotas", pessoa: "pessoas" }[raiz] ?? raiz;
+}
 
 let atual = null;        // { parar, podeSair } da tela aberta
 let hashAtual = null;
@@ -46,38 +85,58 @@ function lerEndereco() {
 }
 
 function montarCasca() {
-  const pend = el("span", { class: "bolinha", hidden: true });
+  const p = D.estado.perfil || {};
+  const nome = p.nome || (supa.eu() && supa.eu().email) || "";
+  const inicial = (nome.trim()[0] || "?").toUpperCase();
+  const logo = (claro) => el("img", {
+    src: claro ? "img/makro.svg" : "img/makro-branco.svg", alt: "Makro", width: 92, height: 21,
+    class: `logo-makro ${claro ? "so-claro" : "so-escuro"}`,
+  });
+  const linkMenu = ([rota, rotulo, ic]) => el("a", { href: `#/${rota}`, dataset: { rota } },
+    icone(ic, 20), el("span", {}, rotulo),
+    rota === "acessos" ? el("span", { class: "bolinha pendentes", hidden: true }) : null);
+
   document.body.replaceChildren(
+    el("aside", { id: "lateral" },
+      el("a", { href: "#/", class: "marca" },
+        el("img", { src: "img/makro-branco.svg", alt: "Makro", width: 118, height: 27, class: "logo-makro" }),
+        el("small", {}, "manutenção · sala de aplicação direta")),
+      el("nav", { "aria-label": "Menu" }, ...MENU.map(([grupo, itens]) => {
+        const vis = itens.filter((i) => i[3]());
+        return vis.length ? [el("p", { class: "grupo" }, grupo), ...vis.map(linkMenu)] : null;
+      })),
+      el("a", { href: "#/conta", class: "pe" }, el("span", { class: "inicial" }, inicial),
+        el("span", { class: "quem" }, el("b", {}, nome), el("small", {}, PAPEIS[p.papel] || "")))),
     el("header", { id: "topo" },
-      el("a", { href: "#/", class: "marca" }, el("img", { src: "icone.svg", alt: "", width: 28, height: 28 }),
-        el("span", {}, "Sala de Aplicação Direta")),
+      el("a", { href: "#/", class: "marca-topo", "aria-label": "Início" }, logo(true), logo(false),
+        el("small", {}, "sala de aplicação direta")),
+      el("h1", { class: "titulo" }),
       el("span", { id: "sem-rede", hidden: navigator.onLine }, "sem internet"),
-      el("button", { type: "button", id: "bmenu", class: "botao discreto", "aria-label": "Menu", onclick: abrirMenu }, "☰ Menu", pend)),
+      el("button", { type: "button", class: "icone-botao", title: "Atualizar os dados", "aria-label": "Atualizar os dados", onclick: recarregarTudo }, icone("atualizar")),
+      el("button", { type: "button", class: "icone-botao", title: "Claro ou escuro", "aria-label": "Trocar entre claro e escuro", onclick: trocarTema }, icone("tema")),
+      el("button", { type: "button", id: "bmenu", class: "icone-botao", "aria-label": "Menu", onclick: abrirMenu },
+        el("span", { class: "inicial" }, inicial), el("span", { class: "bolinha pendentes", hidden: true }))),
     el("main", { id: "tela" }),
-    el("nav", { id: "abas" }, ...ABAS.filter((a) => a[3]()).map(([rota, nome, icone]) =>
-      el("a", { href: `#/${rota}`, dataset: { rota } },
-        el("span", { class: `icone ${rota || "inicio"}`, "aria-hidden": "true" }, icone), el("span", {}, nome)))),
+    el("nav", { id: "abas", "aria-label": "Atalhos" }, ...itensDoMenu().filter((i) => i[4]).slice(0, 5).map(linkMenu)),
     el("div", { id: "avisos", "aria-live": "polite" }));
-  contarPendentes().then((n) => { if (n) { pend.hidden = false; pend.textContent = String(n); } });
+  contarPendentes().then((n) => {
+    for (const b of document.querySelectorAll(".pendentes")) { b.hidden = !n; b.textContent = String(n); }
+  });
 }
 
 function abrirMenu() {
-  const pendentes = $("#bmenu .bolinha");
   janela("Menu", (fechar) => {
-    const ir = (r) => () => { fechar(); location.hash = `#/${r}`; };
     const p = D.estado.perfil || {};
+    const n = Number(($(".pendentes") || {}).textContent || 0);
+    const ir = (r) => () => { fechar(); location.hash = `#/${r}`; };
+    const naBarra = new Set([...document.querySelectorAll("#abas a")].map((a) => a.dataset.rota));
     return el("nav", { class: "menu" },
-      el("p", { class: "quem" }, el("strong", {}, p.nome || (supa.eu() && supa.eu().email) || ""), el("small", {}, (supa.eu() && supa.eu().email) || "")),
-      el("button", { type: "button", class: "item", onclick: ir("estoque") }, "Estoque"),
-      el("button", { type: "button", class: "item", onclick: ir("historico") }, "Histórico"),
-      el("button", { type: "button", class: "item", onclick: ir("pessoas") }, "Pessoas"),
-      D.ehAdmin() ? el("button", { type: "button", class: "item", onclick: ir("acessos") }, "Acessos",
-        pendentes && !pendentes.hidden ? el("span", { class: "bolinha" }, pendentes.textContent) : null) : null,
-      el("button", { type: "button", class: "item", onclick: ir("conta") }, "Minha conta"),
-      el("button", {
-        type: "button", class: "item",
-        onclick: async () => { fechar(); await recarregarTudo(); },
-      }, "Atualizar os dados"));
+      el("p", { class: "quem" }, el("strong", {}, p.nome || ""), el("small", {}, `${(supa.eu() && supa.eu().email) || ""} · ${PAPEIS[p.papel] || ""}`)),
+      ...itensDoMenu().filter((i) => !naBarra.has(i[0])).map(([rota, rotulo, ic]) =>
+        el("button", { type: "button", class: "item", onclick: ir(rota) }, icone(ic, 20), el("span", {}, rotulo),
+          rota === "acessos" && n ? el("span", { class: "bolinha" }, String(n)) : null)),
+      el("button", { type: "button", class: "item", onclick: async () => { fechar(); await recarregarTudo(); } },
+        icone("atualizar", 20), el("span", {}, "Atualizar os dados")));
   });
 }
 
@@ -117,10 +176,10 @@ async function desenhar(forcar = false) {
   raiz.replaceChildren();
   raiz.className = `tela-${(caminho.split("/")[0] || "inicio")}`;
   document.title = `${rota[1]} · Sala de Aplicação Direta`;
-  for (const a of document.querySelectorAll("#abas a")) {
-    const r = a.dataset.rota;
-    a.classList.toggle("ativa", r === caminho || (r === "estoque" && caminho.startsWith("material/")));
-  }
+  const ativa = rotaDoMenu(caminho);
+  for (const a of document.querySelectorAll("#abas a, #lateral nav a")) a.classList.toggle("ativa", a.dataset.rota === ativa);
+  const tit = $("#topo .titulo");
+  if (tit) tit.textContent = rota[1] === "Início" ? "Sala de Aplicação Direta" : rota[1];
   window.scrollTo(0, 0);
   try {
     atual = rota[2](raiz, { params, query, redesenhar: () => desenhar(true), sair }) || {};
