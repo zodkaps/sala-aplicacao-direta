@@ -15,10 +15,11 @@ export function criarBanco() {
     perfis: [],          // { id, email, nome, papel, criado_em }
     pessoas: [],
     materiais: [],
+    frotas: [],
     movimentacoes: [],
     objetos: new Map(),  // caminho -> { bytes, dono, tipo }
     tokens: new Map(),   // token -> id do usuário
-    seq: { pessoas: 0, materiais: 0, movimentacoes: 0, token: 0 },
+    seq: { pessoas: 0, materiais: 0, frotas: 0, movimentacoes: 0, token: 0 },
     pedidos: [],         // registro do que o site pediu (para o teste conferir)
     autoconfirma: true,
     falhar: null,        // (rota) => boolean: força erro de rede
@@ -58,6 +59,7 @@ function estoque(db) {
       id: m.id, codigo: m.codigo, descricao: m.descricao, unidade: m.unidade, minimo: m.minimo, local: m.local,
       ativo: m.ativo, saldo: Math.round(saldo * 1000) / 1000, movimentos: movs.length,
       ultima: movs.length ? movs[movs.length - 1].registrado_em : null,
+      referencia: m.referencia ?? null,
     };
   });
 }
@@ -67,6 +69,7 @@ function historico(db) {
   return db.movimentacoes.map((mv) => {
     const m = db.materiais.find((x) => x.id === mv.material_id);
     const r = db.pessoas.find((x) => x.id === mv.retirante_id);
+    const f = db.frotas.find((x) => x.id === mv.frota_id);
     return {
       id: mv.id, tipo: mv.tipo, quantidade: mv.quantidade, foto: mv.foto, registrado_em: mv.registrado_em,
       material_id: mv.material_id, material: m.descricao, codigo: m.codigo, unidade: m.unidade,
@@ -76,6 +79,8 @@ function historico(db) {
       registrado_por: mv.registrado_por, registrado_por_nome: nome(db.perfis, mv.registrado_por),
       cancelada_em: mv.cancelada_em, cancelada_por_nome: nome(db.perfis, mv.cancelada_por),
       motivo_cancelamento: mv.motivo_cancelamento,
+      referencia: m.referencia ?? null, frota_id: mv.frota_id ?? null,
+      frota: f ? f.numero : null, frota_descricao: f ? f.descricao : null,
     };
   });
 }
@@ -260,6 +265,7 @@ export async function instalar(context, base, db) {
       perfis: () => db.perfis.filter((p) => p.id === eu || podeVer(papel)).map(({ id, nome, papel: pp }) => ({ id, nome, papel: pp })),
       pessoas: () => (podeVer(papel) ? db.pessoas : []),
       materiais: () => (podeVer(papel) ? db.materiais : []),
+      frotas: () => (podeVer(papel) ? db.frotas : []),
       estoque: () => (podeVer(papel) ? estoque(db) : []),
       historico: () => (podeVer(papel) ? historico(db) : []),
     };
@@ -273,6 +279,23 @@ export async function instalar(context, base, db) {
       corpo = texto();
       if (!podeRegistrar(papel)) return json(route, 403, erroRLS(alvo));
       const agora = new Date().toISOString();
+      if (alvo === "frotas") {
+        if (papel !== "admin") return json(route, 403, erroRLS(alvo));
+        const ignorar = /resolution=ignore-duplicates/.test(cab.prefer || "") && params.get("on_conflict") === "numero";
+        const feitas = [];
+        for (const x of Array.isArray(corpo) ? corpo : [corpo]) {
+          const numero = String(x.numero || "").trim().toUpperCase().replace(/\s+/g, " ");
+          if (db.frotas.some((f) => f.numero === numero)) {
+            if (ignorar) continue;
+            return json(route, 409, { code: "23505", message: 'duplicate key value violates unique constraint "frotas_numero_key"' });
+          }
+          const placa = x.placa ? String(x.placa).toUpperCase().replace(/[^A-Z0-9]/g, "") : null;
+          const linha = { id: ++db.seq.frotas, numero, descricao: x.descricao || null, placa, ativo: true, criado_em: agora };
+          db.frotas.push(linha);
+          feitas.push(linha);
+        }
+        return json(route, 201, feitas);
+      }
       if (alvo === "pessoas") {
         if (db.pessoas.some((p) => p.nome.toLowerCase() === corpo.nome.toLowerCase() && (p.matricula || "") === (corpo.matricula || ""))) {
           return json(route, 409, { code: "23505", message: 'duplicate key value violates unique constraint "pessoas_nome_unico"' });
@@ -285,12 +308,12 @@ export async function instalar(context, base, db) {
         if (db.materiais.some((m) => m.descricao.toLowerCase() === corpo.descricao.toLowerCase())) {
           return json(route, 409, { code: "23505", message: 'duplicate key value violates unique constraint "materiais_descricao_unica"' });
         }
-        const linha = { id: ++db.seq.materiais, codigo: corpo.codigo, descricao: corpo.descricao, unidade: corpo.unidade, minimo: corpo.minimo || 0, local: corpo.local, ativo: true, criado_em: agora, criado_por: eu };
+        const linha = { id: ++db.seq.materiais, codigo: corpo.codigo, referencia: corpo.referencia ?? null, descricao: corpo.descricao, unidade: corpo.unidade, minimo: corpo.minimo || 0, local: corpo.local, ativo: true, criado_em: agora, criado_por: eu };
         db.materiais.push(linha);
         return json(route, 201, [linha]);
       }
       if (alvo === "movimentacoes") {
-        const permitidas = ["tipo", "material_id", "quantidade", "foto", "retirante_id", "responsavel_id", "entregue_por", "documento", "destino", "obs"];
+        const permitidas = ["tipo", "material_id", "quantidade", "foto", "retirante_id", "responsavel_id", "frota_id", "entregue_por", "documento", "destino", "obs"];
         const sobra = Object.keys(corpo).filter((k) => !permitidas.includes(k));
         if (sobra.length) return json(route, 403, { code: "42501", message: `permission denied for table movimentacoes (${sobra})` });
         const o = db.objetos.get(corpo.foto);
@@ -300,6 +323,8 @@ export async function instalar(context, base, db) {
         if (!(corpo.quantidade > 0)) return json(route, 400, { code: "23514", message: "violates check constraint" });
         if (corpo.tipo === "saida" && !corpo.retirante_id) return json(route, 400, { code: "23514", message: 'violates check constraint "saida_tem_retirante"' });
         if (corpo.tipo === "entrada" && corpo.retirante_id) return json(route, 400, { code: "23514", message: 'violates check constraint "entrada_sem_retirante"' });
+        if (corpo.tipo === "entrada" && corpo.frota_id) return json(route, 400, { code: "23514", message: 'violates check constraint "entrada_sem_frota"' });
+        if (corpo.frota_id && !db.frotas.some((f) => f.id === corpo.frota_id && f.ativo)) return json(route, 400, { code: "P0001", message: "Essa frota está desativada no cadastro." });
         const linha = {
           id: ++db.seq.movimentacoes, ...Object.fromEntries(permitidas.map((k) => [k, corpo[k] ?? null])),
           registrado_por: eu, registrado_em: agora, cancelada_em: null, cancelada_por: null, motivo_cancelamento: null,
@@ -312,7 +337,7 @@ export async function instalar(context, base, db) {
 
     if (metodo === "PATCH") {
       corpo = texto();
-      const lista = alvo === "pessoas" ? db.pessoas : alvo === "materiais" ? db.materiais : null;
+      const lista = { pessoas: db.pessoas, materiais: db.materiais, frotas: db.frotas }[alvo] || null;
       if (!lista) return json(route, 403, { code: "42501", message: `permission denied for table ${alvo}` });
       if (papel !== "admin") return json(route, 200, []); // a política filtra: nenhuma linha
       const alvos = aplicar(lista, params);
