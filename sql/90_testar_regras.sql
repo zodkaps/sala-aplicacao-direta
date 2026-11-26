@@ -23,6 +23,7 @@ declare
   p_alm   bigint;
   m_graxa bigint;
   mv_sai  bigint;
+  f_433   bigint;
   n       bigint;
   t       text;
   v       numeric;
@@ -46,6 +47,12 @@ begin
   update public.perfis set papel = 'operador' where id = u_op;
   update public.perfis set papel = 'consulta' where id = u_con;
 
+  -- uma frota (o número e a placa saem num jeito só)
+  insert into public.frotas (numero, placa, descricao) values ('  t-433 ', 'abc-1d23', ' Cavalo T ') returning id into f_433;
+  select numero || '|' || placa || '|' || descricao into t from public.frotas where id = f_433;
+  if t <> 'T-433|ABC1D23|Cavalo T' then raise exception using errcode = 'TFAIL', message = 'FALHOU: frota gravada como ' || t; end if;
+  ok := ok + 1;
+
   -- as fotos "enviadas" (no bucket, com dono)
   insert into storage.objects (bucket_id, name, owner_id) values
     ('fotos', f_ent, u_op::text), ('fotos', f_sai, u_op::text),
@@ -57,13 +64,13 @@ begin
 
   insert into public.pessoas (nome, matricula) values ('T Mecânico', 'T1') returning id into p_mec;
   insert into public.pessoas (nome) values ('T Almoxarife') returning id into p_alm;
-  insert into public.materiais (descricao, unidade) values ('T Graxa', 'KG') returning id into m_graxa;
+  insert into public.materiais (descricao, unidade, codigo, referencia) values ('T Graxa', 'KG', 'T900', 'REF-T 123') returning id into m_graxa;
   ok := ok + 1;
 
   insert into public.movimentacoes (tipo, material_id, quantidade, foto, responsavel_id, entregue_por)
   values ('entrada', m_graxa, 10, f_ent, p_alm, '  ');
-  insert into public.movimentacoes (tipo, material_id, quantidade, foto, retirante_id, responsavel_id, destino)
-  values ('saida', m_graxa, 3, f_sai, p_mec, p_alm, 'Frota T') returning id into mv_sai;
+  insert into public.movimentacoes (tipo, material_id, quantidade, foto, retirante_id, responsavel_id, frota_id, destino)
+  values ('saida', m_graxa, 3, f_sai, p_mec, p_alm, f_433, 'Eixo traseiro') returning id into mv_sai;
 
   select registrado_por::text || '|' || coalesce(entregue_por, 'nulo') into t
     from public.movimentacoes where foto = f_ent;
@@ -72,7 +79,24 @@ begin
   if v <> 7 then raise exception using errcode = 'TFAIL', message = 'FALHOU: saldo depois de entrada 10 e saída 3 = ' || v; end if;
   select retirante || '|' || responsavel || '|' || registrado_por_nome into t from public.historico where id = mv_sai;
   if t <> 'T Mecânico|T Almoxarife|T Operador' then raise exception using errcode = 'TFAIL', message = 'FALHOU: histórico: ' || t; end if;
-  ok := ok + 3;
+  select frota || '|' || referencia || '|' || codigo into t from public.historico where id = mv_sai;
+  if t <> 'T-433|REF-T 123|T900' then raise exception using errcode = 'TFAIL', message = 'FALHOU: frota/referência no histórico: ' || t; end if;
+  select referencia into t from public.estoque where id = m_graxa;
+  if t is distinct from 'REF-T 123' then raise exception using errcode = 'TFAIL', message = 'FALHOU: referência no estoque'; end if;
+  ok := ok + 5;
+
+  begin
+    insert into public.movimentacoes (tipo, material_id, quantidade, foto, responsavel_id, frota_id)
+    values ('entrada', m_graxa, 1, f_mais, p_alm, f_433);
+    raise exception using errcode = 'TFAIL', message = 'FALHOU: entrada com frota entrou';
+  exception when check_violation then ok := ok + 1;
+  end;
+
+  begin
+    insert into public.frotas (numero) values ('T-999');
+    raise exception using errcode = 'TFAIL', message = 'FALHOU: operador cadastrou frota';
+  exception when insufficient_privilege then ok := ok + 1;
+  end;
 
   begin
     insert into public.movimentacoes (tipo, material_id, quantidade, foto, responsavel_id)
@@ -237,6 +261,30 @@ begin
   get diagnostics n = row_count;
   if n <> 1 then raise exception using errcode = 'TFAIL', message = 'FALHOU: admin não editou o cadastro'; end if;
   ok := ok + 1;
+
+  -- frotas: o administrador cadastra e desativa; frota desativada não recebe saída
+  insert into public.frotas (numero) values ('t-500');
+  begin
+    insert into public.frotas (numero) values ('T-500 ');
+    raise exception using errcode = 'TFAIL', message = 'FALHOU: frota repetida entrou';
+  exception when unique_violation then ok := ok + 1;
+  end;
+  update public.frotas set ativo = false where id = f_433;
+  perform set_config('role', 'postgres', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', u_op, 'role', 'authenticated')::text, true);
+  perform set_config('role', 'authenticated', true);
+  begin
+    insert into public.movimentacoes (tipo, material_id, quantidade, foto, retirante_id, responsavel_id, frota_id)
+    values ('saida', m_graxa, 1, f_mais, p_mec, p_alm, f_433);
+    raise exception using errcode = 'TFAIL', message = 'FALHOU: saída para frota desativada entrou';
+  exception when sqlstate 'P0001' then
+    get stacked diagnostics t = message_text;
+    if t not like '%frota%' then raise exception using errcode = 'TFAIL', message = 'FALHOU: recusa errada: ' || t; end if;
+    ok := ok + 1;
+  end;
+  perform set_config('role', 'postgres', true);
+  perform set_config('request.jwt.claims', json_build_object('sub', u_admin, 'role', 'authenticated')::text, true);
+  perform set_config('role', 'authenticated', true);
 
   begin
     perform public.cancelar_movimentacao(mv_sai, 'oi');
