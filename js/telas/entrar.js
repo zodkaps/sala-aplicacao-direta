@@ -59,21 +59,28 @@ export function telaEntrar(raiz, { aoEntrar, motivo = "" }) {
 
   aplicarModo();
   raiz.append(el("section", { class: "entrar" },
-    el("img", { src: "icone.svg", alt: "", width: 72, height: 72, class: "logo" }),
-    el("h1", {}, "Sala de Aplicação Direta"),
-    el("p", { class: "explica" }, "Controle de entrada e saída de material da manutenção."),
-    el("form", { class: "formulario cartao", onsubmit: aoEnviar },
+    el("form", { class: "formulario cartao cartao-entrar", onsubmit: aoEnviar },
+      cabecalho(),
       campoNome, campo("E-mail", email), campoSenha("Senha", senha), mensagem, enviar, trocar)));
   setTimeout(() => (ultimo ? senha : email).focus(), 50);
+}
+
+/** O alto do cartão de entrar: a estrela da Makro e o nome do sistema, como
+ *  no painel de programação. */
+function cabecalho() {
+  return el("div", { class: "logo-linha" },
+    el("img", { src: "icone.svg", alt: "", width: 44, height: 44 }),
+    el("div", {}, el("h1", {}, "Sala de Aplicação Direta"), el("small", {}, "manutenção · controle de material")));
 }
 
 export function telaAguardando(raiz, { nome, aoVerificar, aoSair }) {
   const verificar = el("button", { type: "button", class: "botao primario grande largo" }, "Já fui liberado — verificar");
   verificar.addEventListener("click", async () => { const soltar = ocupar(verificar, "Verificando…"); try { await aoVerificar(); } finally { soltar(); } });
   raiz.append(el("section", { class: "entrar" },
-    el("img", { src: "icone.svg", alt: "", width: 72, height: 72, class: "logo" }),
-    el("h1", {}, nome ? `Olá, ${nome.split(" ")[0]}` : "Olá"),
-    el("p", { class: "explica" }, "Sua conta foi criada e está aguardando liberação. Peça ao administrador para liberar o seu acesso no site (menu → Acessos)."),
-    el("div", { class: "cartao" }, verificar,
+    el("div", { class: "cartao cartao-entrar" },
+      cabecalho(),
+      el("h2", {}, nome ? `Olá, ${nome.split(" ")[0]}` : "Olá"),
+      el("p", { class: "explica" }, "Sua conta foi criada e está aguardando liberação. Peça ao administrador para liberar o seu acesso no site (menu → Acessos)."),
+      verificar,
       el("button", { type: "button", class: "botao discreto largo", onclick: aoSair }, "Sair"))));
 }

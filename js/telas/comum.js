@@ -267,9 +267,9 @@ export function cartaoMovimento(m, aoAbrir) {
   el("span", { class: "mini" }, el("img", { alt: "", loading: "lazy", decoding: "async", dataset: { foto: m.foto } })),
   el("span", { class: "mov-texto" },
     el("span", { class: "linha1" },
-      el("span", { class: `etiqueta ${m.tipo}` }, saida ? "SAÍDA" : "ENTRADA"),
+      el("span", { class: `etiqueta ${m.tipo}` }, saida ? "Saída" : "Entrada"),
       el("strong", { class: "qtd" }, `${formatarQtd(m.quantidade)} ${m.unidade}`),
-      m.cancelada_em ? el("span", { class: "etiqueta cancelada" }, "CANCELADA") : null),
+      m.cancelada_em ? el("span", { class: "etiqueta cancelada" }, "Cancelada") : null),
     el("span", { class: "material" }, m.material, m.referencia ? el("small", { class: "ref" }, ` · ${m.referencia}`) : null),
     el("span", { class: "quem" }, quem),
     el("small", { class: "quando" }, saida ? `${quando(m.registrado_em)} · acompanhou ${m.responsavel}` : quando(m.registrado_em))));

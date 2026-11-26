@@ -6,6 +6,7 @@ import * as supa from "../supa.js";
 import * as D from "../dados.js";
 import { inicioDoDia, situacaoSaldo } from "../texto.js";
 import { listaMovimentos } from "./comum.js";
+import { icone } from "../icones.js";
 
 export function telaInicio(raiz) {
   const nome = ((D.estado.perfil && D.estado.perfil.nome) || "").split(" ")[0];
@@ -35,10 +36,10 @@ export function telaInicio(raiz) {
     el("h1", { class: "ola" }, nome ? `Olá, ${nome}` : "Olá"),
     D.podeRegistrar() ? el("div", { class: "grandes" },
       el("a", { href: "#/saida", class: "atalho saida" },
-        el("span", { class: "seta", "aria-hidden": "true" }, "↑"),
+        el("span", { class: "seta" }, icone("saida", 30)),
         el("strong", {}, "Saída"), el("small", {}, "Material saindo da sala")),
       el("a", { href: "#/entrada", class: "atalho entrada" },
-        el("span", { class: "seta", "aria-hidden": "true" }, "↓"),
+        el("span", { class: "seta" }, icone("entrada", 30)),
         el("strong", {}, "Entrada"), el("small", {}, "Material chegando na sala"))) : null,
     el("div", { class: "numeros" },
       el("a", { href: "#/historico?tipo=saida&periodo=0", class: "numero" }, nSaidas, el("span", {}, "saídas hoje")),

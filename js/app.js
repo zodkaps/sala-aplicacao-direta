@@ -179,7 +179,7 @@ async function desenhar(forcar = false) {
   const ativa = rotaDoMenu(caminho);
   for (const a of document.querySelectorAll("#abas a, #lateral nav a")) a.classList.toggle("ativa", a.dataset.rota === ativa);
   const tit = $("#topo .titulo");
-  if (tit) tit.textContent = rota[1] === "Início" ? "Sala de Aplicação Direta" : rota[1];
+  if (tit) tit.textContent = rota[1];
   window.scrollTo(0, 0);
   try {
     atual = rota[2](raiz, { params, query, redesenhar: () => desenhar(true), sair }) || {};

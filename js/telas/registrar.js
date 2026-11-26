@@ -9,6 +9,7 @@ import { el, campo, confirmar, ocupar } from "../ui.js";
 import * as supa from "../supa.js";
 import * as D from "../dados.js";
 import { prepararFoto, novoId } from "../foto.js";
+import { icone } from "../icones.js";
 import { caminhoFoto, miniaturaDe, lerQuantidade, formatarQtd, normalizar } from "../texto.js";
 import {
   seletor, detalheMaterial, detalhePessoa, detalheFrota, dialogoMaterial, dialogoPessoa, dialogoFrota,
@@ -55,7 +56,7 @@ export function telaRegistrar(raiz, tipo, ctx) {
 
   // ── 1. a foto ──
   const previa = el("img", { class: "previa", alt: "Foto do material", hidden: true });
-  const semFoto = el("div", { class: "sem-foto" }, el("span", { class: "icone-camera", "aria-hidden": "true" }), "Nenhuma foto ainda");
+  const semFoto = el("div", { class: "sem-foto" }, icone("camera", 40), "Nenhuma foto ainda");
   const statusFoto = el("p", { class: "status-foto", "aria-live": "polite" });
   const camera = el("input", { type: "file", accept: "image/*", capture: "environment", class: "invisivel", "aria-label": "Tirar foto" });
   const galeria = el("input", { type: "file", accept: "image/*", class: "invisivel", "aria-label": "Escolher foto da galeria" });
@@ -64,8 +65,8 @@ export function telaRegistrar(raiz, tipo, ctx) {
     el("h2", {}, el("span", { class: "num" }, "1"), saida ? "Foto do material que está saindo" : "Foto do material que chegou"),
     el("div", { class: "foto-area" }, semFoto, previa),
     el("div", { class: "foto-botoes" },
-      el("label", { class: `botao grande ${tipo}` }, camera, el("span", { "aria-hidden": "true" }, "📷 "), textoCamera),
-      el("label", { class: "botao" }, galeria, "Galeria")),
+      el("label", { class: "botao grande primario" }, camera, icone("camera", 22), textoCamera),
+      el("label", { class: "botao" }, galeria, icone("galeria", 20), "Galeria")),
     statusFoto);
 
   function enviarAgora() {
@@ -208,7 +209,7 @@ export function telaRegistrar(raiz, tipo, ctx) {
 
   // ── registrar ──
   erroCaixa = el("div", { class: "erro-caixa", role: "alert", hidden: true });
-  const botao = el("button", { type: "button", class: `botao grande largo ${tipo}` }, saida ? "Registrar saída" : "Registrar entrada");
+  const botao = el("button", { type: "button", class: "botao grande largo primario" }, saida ? "Registrar saída" : "Registrar entrada");
   botao.addEventListener("click", registrar);
 
   function mostrarErro(t) { erroCaixa.textContent = t; erroCaixa.hidden = false; }
@@ -277,7 +278,7 @@ export function telaRegistrar(raiz, tipo, ctx) {
   function sucesso(q) {
     const m = D.materialPorId(f.material.id) || f.material;
     raiz.replaceChildren(el("section", { class: `sucesso ${tipo}` },
-      el("div", { class: "marca-ok", "aria-hidden": "true" }, "✓"),
+      el("div", { class: "marca-ok" }, icone("visto", 56)),
       el("h1", {}, saida ? "Saída registrada" : "Entrada registrada"),
       el("img", { class: "previa pequena", src: f.foto.previa, alt: "" }),
       el("p", { class: "resumo" }, `${formatarQtd(q)} ${m.unidade} · ${m.descricao}`),
@@ -287,7 +288,7 @@ export function telaRegistrar(raiz, tipo, ctx) {
         : `Recebeu: ${f.responsavel.nome}`),
       el("p", { class: "saldo-agora" }, `Saldo agora: ${formatarQtd(m.saldo)} ${m.unidade}`),
       el("div", { class: "acoes coluna" },
-        el("button", { type: "button", class: `botao grande ${tipo}`, onclick: () => ctx.redesenhar() },
+        el("button", { type: "button", class: "botao grande primario", onclick: () => ctx.redesenhar() },
           saida ? "Registrar outra saída" : "Registrar outra entrada"),
         el("a", { href: "#/", class: "botao grande" }, "Voltar ao início"))));
     window.scrollTo(0, 0);
@@ -295,6 +296,7 @@ export function telaRegistrar(raiz, tipo, ctx) {
 
   raiz.append(...[
     el("div", { class: `cabeca-registro ${tipo}` },
+      el("span", { class: `etiqueta ${tipo}` }, saida ? "Saída" : "Entrada"),
       el("h1", {}, saida ? "Saída de material" : "Entrada de material"),
       el("p", {}, saida ? "Material saindo da sala de aplicação direta." : "Material chegando na sala de aplicação direta.")),
     secFoto, secMaterial, secQtd, secRetirante, secOnde, secResp, secExtra,
