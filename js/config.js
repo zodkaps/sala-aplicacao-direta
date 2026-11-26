@@ -12,4 +12,4 @@ export const SUPABASE = {
 };
 
 export const BUCKET = "fotos";
-export const VERSAO = "1.0.0";
+export const VERSAO = "1.1.0";

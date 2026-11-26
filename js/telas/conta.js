@@ -1,6 +1,6 @@
 // Minha conta: quem está usando, trocar a senha e sair deste aparelho.
 
-import { el, campo, ocupar, aviso, confirmar } from "../ui.js";
+import { el, campoSenha, esconderSenhas, ocupar, aviso, confirmar } from "../ui.js";
 import * as supa from "../supa.js";
 import * as D from "../dados.js";
 import { PAPEIS } from "../texto.js";
@@ -23,6 +23,7 @@ export function telaConta(raiz, ctx) {
     try {
       await supa.trocarSenha(nova.value);
       nova.value = ""; repete.value = "";
+      esconderSenhas(ev.target);
       aviso("Senha trocada.");
     } catch (e) {
       erro.textContent = e.message; erro.hidden = false;
@@ -37,7 +38,7 @@ export function telaConta(raiz, ctx) {
       el("dt", {}, "Acesso"), el("dd", {}, PAPEIS[p.papel] || p.papel || "—")),
     el("form", { class: "formulario cartao", onsubmit: enviar },
       el("h2", {}, "Trocar a senha"),
-      campo("Senha nova", nova), campo("Repita a senha nova", repete), erro,
+      campoSenha("Senha nova", nova), campoSenha("Repita a senha nova", repete), erro,
       el("div", { class: "acoes" }, trocar)),
     el("div", { class: "acoes" },
       el("button", {

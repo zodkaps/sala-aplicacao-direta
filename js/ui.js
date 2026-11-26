@@ -98,6 +98,42 @@ export function campo(rotulo, entrada, ajuda) {
     ajuda ? el("small", { class: "ajuda" }, ajuda) : null);
 }
 
+let nSenha = 0;
+
+/** Campo de senha com o botão "Mostrar": no celular é fácil errar uma letra
+ *  sem ver. O botão fica fora do <label> para o nome do campo continuar
+ *  sendo só o rótulo (quem usa leitor de tela ouve "Senha", não "Senha Mostrar"). */
+export function campoSenha(rotulo, entrada) {
+  nSenha += 1;
+  entrada.id = entrada.id || `senha-${nSenha}`;
+  // Visível, a senha não pode ganhar maiúscula nem correção do teclado.
+  entrada.setAttribute("autocapitalize", "none");
+  entrada.setAttribute("autocorrect", "off");
+  entrada.setAttribute("spellcheck", "false");
+  const botao = el("button", {
+    type: "button", class: "mostrar-senha", "aria-controls": entrada.id,
+    "aria-pressed": "false", "aria-label": "Mostrar a senha",
+  }, "Mostrar");
+  botao.addEventListener("click", () => {
+    const ver = entrada.type === "password";
+    const fim = entrada.value.length;
+    entrada.type = ver ? "text" : "password";
+    botao.textContent = ver ? "Ocultar" : "Mostrar";
+    botao.setAttribute("aria-pressed", String(ver));
+    botao.setAttribute("aria-label", ver ? "Ocultar a senha" : "Mostrar a senha");
+    entrada.focus({ preventScroll: true });
+    try { entrada.setSelectionRange(fim, fim); } catch { /* nada */ }
+  });
+  return el("div", { class: "campo" },
+    el("label", { class: "rotulo", for: entrada.id }, rotulo),
+    el("div", { class: "senha-caixa" }, entrada, botao));
+}
+
+/** Volta a esconder as senhas de um formulário (antes de enviar). */
+export function esconderSenhas(raiz) {
+  for (const b of raiz.querySelectorAll(".mostrar-senha[aria-pressed='true']")) b.click();
+}
+
 /** Espera o usuário parar de digitar. */
 export function adiar(fn, ms = 300) {
   let t;

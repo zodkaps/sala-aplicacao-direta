@@ -149,6 +149,14 @@ input:focus, select:focus, textarea:focus { border-color: var(--foco); outline: 
 input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--marca); }
 
 .campo { display: flex; flex-direction: column; gap: .3rem; margin-bottom: .8rem; }
+.senha-caixa { position: relative; }
+.senha-caixa input { padding-right: 6.4rem; }
+.mostrar-senha {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  min-width: 88px; min-height: 40px; padding: 0 .7rem;
+  border: 0; border-radius: 9px; background: var(--fundo); color: var(--foco);
+  font: inherit; font-size: .92rem; font-weight: 700; cursor: pointer;
+}
 .rotulo { font-size: .9rem; font-weight: 600; color: var(--suave); }
 .ajuda { color: var(--suave); font-size: .8rem; }
 .marcar { display: flex; align-items: center; gap: .5rem; margin: .4rem 0 .8rem; }

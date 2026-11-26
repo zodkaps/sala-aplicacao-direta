@@ -90,6 +90,8 @@ async function entrar(page, email, senha) {
 async function sairPeloMenu(page) {
   await page.locator("#bmenu").click();
   await page.getByRole("button", { name: "Minha conta" }).click();
+  await page.getByRole("button", { name: "Sair deste aparelho" }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Mostrar a senha" }).count(), 2, "Minha conta: Mostrar nas duas senhas");
   await page.getByRole("button", { name: "Sair deste aparelho" }).click();
   await page.getByRole("button", { name: "Sair", exact: true }).click();
   await page.locator('input[type="email"]').waitFor();
@@ -124,6 +126,18 @@ await tela(page, "01-entrar");
 await entrar(page, "ana.admin@exemplo-teste.com.br", "errada");
 await page.getByText("E-mail ou senha não conferem.").waitFor();
 passo("senha errada é recusada com mensagem em português");
+
+// mostrar e ocultar a senha
+const campoDaSenha = page.getByLabel("Senha", { exact: true });
+await campoDaSenha.fill("abc Def");
+await page.getByRole("button", { name: "Mostrar a senha" }).click();
+assert.equal(await campoDaSenha.getAttribute("type"), "text");
+assert.equal(await campoDaSenha.inputValue(), "abc Def");
+assert.equal(await campoDaSenha.getAttribute("autocapitalize"), "none");
+await semRolagemLateral(page, "entrar com a senha à vista");
+await page.getByRole("button", { name: "Ocultar a senha" }).click();
+assert.equal(await campoDaSenha.getAttribute("type"), "password");
+passo("o botão Mostrar deixa ver a senha e Ocultar esconde de novo");
 
 // criar conta → aguardando liberação
 await page.getByRole("button", { name: "Primeira vez? Criar conta" }).click();

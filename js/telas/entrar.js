@@ -1,7 +1,7 @@
 // Entrar e criar conta. Quem cria a conta fica "aguardando liberação" até o
 // administrador escolher o acesso dela (menu → Acessos).
 
-import { el, campo, ocupar } from "../ui.js";
+import { el, campo, campoSenha, ocupar } from "../ui.js";
 import * as supa from "../supa.js";
 
 const GUARDA_EMAIL = "sad.email";
@@ -63,7 +63,7 @@ export function telaEntrar(raiz, { aoEntrar, motivo = "" }) {
     el("h1", {}, "Sala de Aplicação Direta"),
     el("p", { class: "explica" }, "Controle de entrada e saída de material da manutenção."),
     el("form", { class: "formulario cartao", onsubmit: aoEnviar },
-      campoNome, campo("E-mail", email), campo("Senha", senha), mensagem, enviar, trocar)));
+      campoNome, campo("E-mail", email), campoSenha("Senha", senha), mensagem, enviar, trocar)));
   setTimeout(() => (ultimo ? senha : email).focus(), 50);
 }
 
