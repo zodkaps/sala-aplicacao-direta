@@ -11,8 +11,9 @@ abra o endereço e use *Adicionar à tela inicial*.
 
 O visual segue o **padrão Makro**, o mesmo do painel de programação do PCM: o
 azul-marinho institucional na estrutura (barra lateral, botão principal, o que
-está escolhido), o vermelho só para alerta, as fontes Metropolis e Nunito, o
-logo e os ícones em linha. Claro por padrão; o escuro fica no botão ◐.
+está escolhido), as fontes Metropolis e Nunito, o logo e os ícones em linha. Para
+bater o olho: **entrada é verde e saída é vermelha** — nos cards da lista, nos
+botões grandes do início e na tela de registrar. Claro por padrão; o escuro fica no botão ◐.
 
 ## O que dá para fazer
 

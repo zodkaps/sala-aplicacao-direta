@@ -382,6 +382,14 @@ await page.locator('#abas a[data-rota=""]').click();
 await page.locator(".numero", { hasText: "saídas hoje" }).locator("strong", { hasText: "1" }).waitFor();
 await page.locator(".numero", { hasText: "entradas hoje" }).locator("strong", { hasText: "1" }).waitFor();
 await semRolagemLateral(page, "início");
+// entrada verde e saída vermelha: os botões grandes e os cards da lista
+const cores = await page.evaluate(() => {
+  const fundo = (s) => getComputedStyle(document.querySelector(s)).backgroundColor;
+  const borda = (s) => getComputedStyle(document.querySelector(s)).borderLeftColor;
+  return [fundo(".atalho.saida"), fundo(".atalho.entrada"), borda(".mov.saida"), borda(".mov.entrada")];
+});
+assert.deepEqual(cores, ["rgb(212, 0, 31)", "rgb(18, 130, 59)", "rgb(212, 0, 31)", "rgb(18, 130, 59)"], String(cores));
+passo("entrada em verde e saída em vermelho nos botões do início e nos cards");
 await tela(page, "09-inicio");
 passo("início conta só as válidas de hoje");
 

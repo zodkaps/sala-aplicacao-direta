@@ -65,7 +65,7 @@ export function telaRegistrar(raiz, tipo, ctx) {
     el("h2", {}, el("span", { class: "num" }, "1"), saida ? "Foto do material que está saindo" : "Foto do material que chegou"),
     el("div", { class: "foto-area" }, semFoto, previa),
     el("div", { class: "foto-botoes" },
-      el("label", { class: "botao grande primario" }, camera, icone("camera", 22), textoCamera),
+      el("label", { class: `botao grande ${tipo}` }, camera, icone("camera", 22), textoCamera),
       el("label", { class: "botao" }, galeria, icone("galeria", 20), "Galeria")),
     statusFoto);
 
@@ -209,7 +209,7 @@ export function telaRegistrar(raiz, tipo, ctx) {
 
   // ── registrar ──
   erroCaixa = el("div", { class: "erro-caixa", role: "alert", hidden: true });
-  const botao = el("button", { type: "button", class: "botao grande largo primario" }, saida ? "Registrar saída" : "Registrar entrada");
+  const botao = el("button", { type: "button", class: `botao grande largo ${tipo}` }, saida ? "Registrar saída" : "Registrar entrada");
   botao.addEventListener("click", registrar);
 
   function mostrarErro(t) { erroCaixa.textContent = t; erroCaixa.hidden = false; }
@@ -288,7 +288,7 @@ export function telaRegistrar(raiz, tipo, ctx) {
         : `Recebeu: ${f.responsavel.nome}`),
       el("p", { class: "saldo-agora" }, `Saldo agora: ${formatarQtd(m.saldo)} ${m.unidade}`),
       el("div", { class: "acoes coluna" },
-        el("button", { type: "button", class: "botao grande primario", onclick: () => ctx.redesenhar() },
+        el("button", { type: "button", class: `botao grande ${tipo}`, onclick: () => ctx.redesenhar() },
           saida ? "Registrar outra saída" : "Registrar outra entrada"),
         el("a", { href: "#/", class: "botao grande" }, "Voltar ao início"))));
     window.scrollTo(0, 0);
