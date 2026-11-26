@@ -75,9 +75,21 @@ function vigiar(page, erros) {
 async function semRolagemLateral(page, onde) {
   const vazou = await page.evaluate(() => /\b(null|undefined|NaN)\b/.test(document.body.innerText));
   assert.ok(!vazou, `${onde}: "null", "undefined" ou "NaN" escrito na tela`);
-  const r = await page.evaluate(() => [window.innerWidth, document.documentElement.scrollWidth,
-    [...document.querySelectorAll("body *")].filter((e) => e.getBoundingClientRect().right > window.innerWidth + 1)
-      .slice(0, 3).map((e) => `${e.tagName}.${e.className}`)]);
+  const r = await page.evaluate(() => {
+    const larg = window.innerWidth;
+    // O que passa da borda mas está dentro de uma caixa que corta (o "…" de
+    // nome comprido) não aparece: só conta o que fica à vista.
+    const cortado = (e) => {
+      for (let a = e.parentElement; a && a !== document.body; a = a.parentElement) {
+        const ov = getComputedStyle(a).overflowX;
+        if (ov !== "visible" && a.getBoundingClientRect().right <= larg + 1) return true;
+      }
+      return false;
+    };
+    return [larg, document.documentElement.scrollWidth,
+      [...document.querySelectorAll("body *")].filter((e) => e.getBoundingClientRect().right > larg + 1 && !cortado(e))
+        .slice(0, 3).map((e) => `${e.tagName}.${e.className}`)];
+  });
   assert.ok(r[1] <= r[0] && !r[2].length, `${onde}: passou da largura (${r[1]} > ${r[0]}): ${r[2]}`);
 }
 
@@ -165,6 +177,22 @@ await page.getByText("Acesso salvo.").waitFor();
 assert.equal(db.perfis.find((p) => p.email === "bruno@exemplo-teste.com.br").papel, "operador");
 passo("administrador libera o acesso pelo site");
 
+// ── frotas: colar a lista do Excel ──
+await page.locator("#bmenu").click();
+await page.getByRole("button", { name: "Frotas" }).click();
+await page.getByText("Nenhuma frota cadastrada ainda").waitFor();
+await page.getByRole("button", { name: "Colar lista" }).click();
+await page.getByLabel("Lista de frotas").fill("Frota\tModelo\tPlaca\nc-101\tScania R450\tABC-1D23\nC-102\tVolvo FH 540\nM-07\nC-101\trepetida");
+await page.getByText("3 frotas novas").waitFor();
+await semRolagemLateral(page, "colar lista de frotas");
+await page.getByRole("button", { name: "Cadastrar 3" }).click();
+await page.getByText("3 frotas cadastradas.").waitFor();
+await page.locator(".linha-pessoa", { hasText: "Frota C-101" }).waitFor();
+assert.deepEqual(db.frotas.map((f) => [f.numero, f.placa]), [["C-101", "ABC1D23"], ["C-102", null], ["M-07", null]]);
+await semRolagemLateral(page, "frotas");
+await tela(page, "02b-frotas");
+passo("administrador cola a lista de frotas do Excel (cabeçalho e repetida ficam de fora)");
+
 // ── entrada ──
 await page.locator('#abas a[data-rota="entrada"]').click();
 await page.getByRole("heading", { name: "Entrada de material" }).waitFor();
@@ -172,6 +200,8 @@ await page.getByLabel("Tirar foto").setInputFiles(await foto(1600, 1200, "#16653
 await page.getByText("Foto enviada ✓").waitFor();
 await cadastrarNoSeletor(page, "Material", "Graxa de lítio EP2 para rolamentos de roda", async (d) => {
   await d.locator("select").selectOption("KG");
+  await d.getByLabel("Referência do fabricante").fill("SKF LGWA 2/1");
+  await d.getByLabel("Código Protheus").fill("000123456");
   await d.getByLabel("Estoque mínimo").fill("4");
   await d.getByLabel("Onde fica na sala").fill("Prateleira 2");
 });
@@ -184,6 +214,8 @@ await page.getByLabel("Documento").fill("NF 123");
 await tela(page, "03-entrada-preenchida");
 await page.getByRole("button", { name: "Registrar entrada" }).click();
 await page.getByRole("heading", { name: "Entrada registrada" }).waitFor();
+assert.equal(db.materiais[0].referencia, "SKF LGWA 2/1");
+assert.equal(db.materiais[0].codigo, "000123456");
 await page.getByText("Saldo agora: 10 KG").waitFor();
 assert.equal(db.movimentacoes.length, 1);
 const ent = db.movimentacoes[0];
@@ -211,8 +243,8 @@ await page.locator(".atalho.saida").click();
 await page.getByRole("heading", { name: "Saída de material" }).waitFor();
 await page.locator(".escolhido", { hasText: "Carlos Almoxarife" }).waitFor(); // lembrado
 await page.getByRole("button", { name: "Registrar saída" }).click();
-await page.locator(".erro-caixa", { hasText: "Falta a foto, o material e quem está retirando." }).waitFor();
-assert.equal(await page.locator(".passo.falta").count(), 3);
+await page.locator(".erro-caixa", { hasText: "Falta a foto, o material, quem está retirando e onde vai ser aplicada." }).waitFor();
+assert.equal(await page.locator(".passo.falta").count(), 4);
 passo("saída sem foto/material/retirante é barrada na tela, com o que falta");
 
 await page.getByLabel("Tirar foto").setInputFiles(await foto(1200, 1600, "#9a3412"));
@@ -226,14 +258,18 @@ await cadastrarNoSeletor(page, "Quem está retirando", "João Mecânico", async 
   await d.getByLabel("Matrícula").fill("123");
   await d.getByLabel("Função").fill("Mecânico");
 });
-await page.getByLabel("Para onde vai (frota, OS, equipamento)").fill("Frota 101");
+await page.getByLabel("Frota", { exact: true }).fill("101");
+await page.locator(".opcao", { hasText: "Frota C-101" }).click();
+await page.locator(".escolhido", { hasText: "Frota C-101" }).waitFor();
+await page.getByLabel("Outro local ou complemento").fill("Eixo dianteiro");
 
 // sair pela metade pede confirmação
 await page.locator('#abas a[data-rota=""]').click();
 await page.getByText("Descartar esta saída sem registrar?").waitFor();
 await page.getByRole("button", { name: "Continuar preenchendo" }).click();
 await page.getByRole("heading", { name: "Saída de material" }).waitFor();
-assert.equal(await page.getByLabel("Para onde vai (frota, OS, equipamento)").inputValue(), "Frota 101");
+assert.equal(await page.getByLabel("Outro local ou complemento").inputValue(), "Eixo dianteiro");
+await page.locator(".escolhido", { hasText: "Frota C-101" }).waitFor();
 passo("sair com a saída pela metade pede confirmação e não perde nada");
 
 await page.getByText("Foto enviada ✓").waitFor();
@@ -241,11 +277,12 @@ await semRolagemLateral(page, "saída");
 await tela(page, "04-saida-preenchida");
 await page.getByRole("button", { name: "Registrar saída" }).click();
 await page.getByRole("heading", { name: "Saída registrada" }).waitFor();
-await page.getByText("Retirou: João Mecânico · Acompanhou: Carlos Almoxarife").waitFor();
+await page.getByText("Retirou: João Mecânico · Acompanhou: Carlos Almoxarife · Frota C-101").waitFor();
 await page.getByText("Saldo agora: 7 KG").waitFor();
 await tela(page, "05-saida-registrada");
 const sai = db.movimentacoes[1];
-assert.equal(sai.tipo, "saida"); assert.equal(sai.quantidade, 3); assert.equal(sai.destino, "Frota 101");
+assert.equal(sai.tipo, "saida"); assert.equal(sai.quantidade, 3); assert.equal(sai.destino, "Eixo dianteiro");
+assert.equal(db.frotas.find((f) => f.id === sai.frota_id).numero, "C-101");
 assert.equal(db.pessoas.find((p) => p.id === sai.retirante_id).nome, "João Mecânico");
 assert.equal(db.pessoas.find((p) => p.id === sai.responsavel_id).nome, "Carlos Almoxarife");
 passo("saída com foto, quem retirou e quem acompanhou; saldo 7");
@@ -253,9 +290,10 @@ passo("saída com foto, quem retirou e quem acompanhou; saldo 7");
 // saída maior que o saldo pede confirmação
 await page.getByRole("button", { name: "Registrar outra saída" }).click();
 await page.getByLabel("Tirar foto").setInputFiles(await foto(800, 600, "#7c2d12"));
-await page.getByLabel("Material", { exact: true }).click();
+await page.getByLabel("Material", { exact: true }).fill("lgwa21");
 await page.locator(".opcao", { hasText: "Graxa de lítio" }).click();
 await page.locator(".qtd-campo").fill("50");
+await page.getByLabel("Outro local ou complemento").fill("Oficina");
 await page.getByText("Atenção: o saldo registrado é 7 KG.").waitFor();
 await page.getByLabel("Quem está retirando", { exact: true }).click();
 await page.locator(".opcao", { hasText: "João Mecânico" }).click();
@@ -263,7 +301,7 @@ await page.getByRole("button", { name: "Registrar saída" }).click();
 await page.getByText(/Registrar mesmo assim\? O saldo fica negativo/).waitFor();
 await page.getByRole("button", { name: "Voltar" }).click();
 assert.equal(db.movimentacoes.length, 2);
-passo("saída maior que o saldo avisa e pede confirmação");
+passo("material achado pela referência digitada sem espaço nem barra; saída maior que o saldo pede confirmação");
 
 // rede cai na hora de gravar: nada se perde, e tentar de novo grava uma vez só
 db.falhar = (r) => r === "POST /rest/v1/movimentacoes";
@@ -292,16 +330,18 @@ await page.waitForFunction(() => document.querySelectorAll(".mov").length === 2)
 await page.getByRole("button", { name: "Entradas" }).click();
 await page.waitForFunction(() => document.querySelectorAll(".mov").length === 1);
 await page.getByRole("button", { name: "Tudo" }).click();
-await page.getByLabel("Buscar", { exact: true }).fill("frota 101");
+await page.getByLabel("Buscar", { exact: true }).fill("c-101");
 await page.waitForFunction(() => document.querySelectorAll(".mov").length === 1);
 passo("filtros de tipo e busca no histórico");
 await page.getByLabel("Buscar", { exact: true }).fill("");
 await page.waitForFunction(() => document.querySelectorAll(".mov").length === 3);
 
 // ficha com a foto e cancelamento
-await page.locator(".mov.saida", { hasText: "Frota 101" }).click();
+await page.locator(".mov.saida", { hasText: "Frota C-101" }).click();
 const ficha = page.locator("dialog[open]");
 await ficha.getByText("João Mecânico (mat. 123)").waitFor();
+await ficha.getByText("C-101 · Scania R450").waitFor();
+await ficha.getByText("SKF LGWA 2/1").waitFor();
 await page.waitForFunction(() => { const i = document.querySelector("dialog[open] .foto-grande"); return i && i.complete && i.naturalWidth === 768; });
 await semRolagemLateral(page, "ficha");
 await tela(page, "07-ficha");
@@ -312,7 +352,7 @@ await motivo.locator("textarea").fill("Lançado errado no teste");
 await motivo.getByRole("button", { name: "Cancelar registro" }).click();
 await page.getByText("Registro cancelado.").waitFor();
 await page.locator(".mov.cancelada").waitFor();
-assert.ok(db.movimentacoes.find((m) => m.destino === "Frota 101").cancelada_em);
+assert.ok(db.movimentacoes.find((m) => m.destino === "Eixo dianteiro").cancelada_em);
 passo("administrador cancela com motivo; o registro fica, marcado como cancelado");
 
 // planilha
@@ -320,6 +360,7 @@ const [baixado] = await Promise.all([page.waitForEvent("download"), page.getByRo
 const csv = readFileSync(await baixado.path(), "utf8");
 assert.ok(csv.startsWith("﻿Data;Tipo;Material"));
 assert.ok(csv.includes("Graxa de lítio") && csv.includes("Cancelada em") && csv.includes("João Mecânico"));
+assert.ok(csv.includes("Referência do fabricante;Código Protheus") && csv.includes("SKF LGWA 2/1") && csv.includes("000123456") && csv.includes(";C-101;Scania R450;"), "planilha com referência, código e frota");
 assert.equal(csv.trim().split("\r\n").length, 4);
 passo(`planilha exportada (${baixado.suggestedFilename()})`);
 
@@ -344,6 +385,14 @@ await semRolagemLateral(page, "início");
 await tela(page, "09-inicio");
 passo("início conta só as válidas de hoje");
 
+// a página da frota: o que foi aplicado nela
+await page.goto(`${SITE}#/frotas`);
+await page.locator(".linha-pessoa", { hasText: "Frota C-101" }).click();
+await page.getByRole("heading", { name: "Frota C-101" }).waitFor();
+await page.waitForFunction(() => document.querySelectorAll(".mov").length === 1);
+await semRolagemLateral(page, "página da frota");
+passo("a página da frota mostra as peças aplicadas nela");
+
 // ── operador ──
 await sairPeloMenu(page);
 await entrar(page, "bruno@exemplo-teste.com.br", "senha-bruno-1");
@@ -356,7 +405,16 @@ await page.locator(".mov").first().click();
 await page.locator("dialog[open] .ficha").waitFor();
 assert.equal(await page.getByRole("button", { name: "Cancelar este registro" }).count(), 0);
 await page.locator("dialog[open] .fechar").click();
-passo("operador registra, mas não vê Acessos nem cancela");
+await page.locator("#bmenu").click();
+await page.getByRole("button", { name: "Frotas" }).click();
+await page.locator(".linha-pessoa", { hasText: "Frota C-102" }).waitFor();
+assert.equal(await page.getByRole("button", { name: "Colar lista" }).count(), 0);
+await page.locator(".atalho.saida").count();
+await page.goto(`${SITE}#/saida`);
+await page.getByLabel("Frota", { exact: true }).fill("C-9");
+assert.equal(await page.locator(".opcao.nova", { hasText: "Cadastrar frota" }).count(), 0);
+await page.locator('#abas a[data-rota=""]').click();
+passo("operador registra, mas não vê Acessos, não cancela e não cadastra frota");
 
 // ── consulta ──
 await sairPeloMenu(page);
@@ -403,8 +461,22 @@ await pt.locator(".atalho.saida").click();
 await pt.getByRole("heading", { name: "Saída de material" }).waitFor();
 await tela(pt, "11-tablet-saida");
 await semRolagemLateral(pt, "tablet saída");
+assert.ok(await pt.locator("#lateral").isVisible(), "barra lateral no tablet deitado");
+assert.ok(!(await pt.locator("#abas").isVisible()), "sem a barra de baixo no tablet deitado");
+await pt.locator('#lateral a[data-rota="frotas"]').click();
+await pt.locator("#topo .titulo", { hasText: "Frotas" }).waitFor();
+passo("tablet: barra lateral Makro com o menu, início e saída sem rolagem lateral");
+
+await pt.getByRole("button", { name: "Trocar entre claro e escuro" }).click();
+assert.equal(await pt.evaluate(() => document.documentElement.dataset.tema), "escuro");
+await pt.goto(`${SITE}#/`);
+await pt.reload();
+await pt.getByRole("heading", { name: "Olá, Ana" }).waitFor();
+assert.equal(await pt.evaluate(() => document.documentElement.dataset.tema), "escuro");
+await pt.waitForFunction(() => [...document.querySelectorAll(".mini img")].every((i) => i.complete && i.naturalWidth > 0));
+await tela(pt, "12-tablet-escuro");
 assert.deepEqual(errosTab, [], errosTab.join("\n"));
-passo("tablet: início e saída sem rolagem lateral e sem erro");
+passo("claro/escuro no botão ◐, lembrado ao abrir de novo");
 await tab.close();
 
 await navegador.close();
