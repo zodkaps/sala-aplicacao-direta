@@ -120,7 +120,7 @@ export function telaRegistrar(raiz, tipo, ctx) {
   const selMaterial = seletor({
     titulo: "Material", vazio: "Nome, referência ou código Protheus", tipoRecente: "material",
     itens: () => D.estado.materiais, campos: (m) => [m.descricao, m.referencia, m.codigo, m.local],
-    rotulo: (m) => m.descricao, detalhe: detalheMaterial, valor: f.material,
+    rotulo: (m) => m.descricao, detalhe: detalheMaterial, valor: f.material, foto: (m) => m.foto || null,
     aoMudar: (m) => { f.material = m; mostrarUnidade(); if (m) { secMaterial.classList.remove("falta"); limparErro(); } },
     criar: (termo) => dialogoMaterial({ descricao: termo }), textoCriar: "Cadastrar material",
   });

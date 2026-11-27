@@ -114,7 +114,10 @@ export function telaFrota(raiz, ctx) {
       el("h1", {}, `Frota ${x.numero}`),
       el("p", { class: "explica" }, [detalheFrota(x), x.ativo ? "" : "desativada"].filter(Boolean).join(" · ") || " "),
       D.ehAdmin() ? el("div", { class: "acoes" },
-        el("button", { type: "button", class: "botao", onclick: async () => { if (await dialogoFrota(x)) desenhar(); } }, "Editar")) : null,
+        el("button", {
+          type: "button", class: "botao",
+          onclick: async () => { const r = await dialogoFrota(x); if (r === "apagado") location.hash = "#/frotas"; else if (r) desenhar(); },
+        }, "Editar")) : null,
       el("div", { class: "titulo-secao" }, el("h2", {}, "Peças aplicadas nesta frota")));
   }
 

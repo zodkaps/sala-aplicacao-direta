@@ -4,7 +4,11 @@
 import { el, adiar } from "../ui.js";
 import * as D from "../dados.js";
 import { filtrar, formatarQtd, situacaoSaldo, quando } from "../texto.js";
-import { listaMovimentos, filtroHistorico, dialogoMaterial, titulo } from "./comum.js";
+import {
+  listaMovimentos, filtroHistorico, dialogoMaterial, titulo, miniatura, carregarMiniaturas, verFoto,
+} from "./comum.js";
+import { dialogoConferir } from "./vistoria.js";
+import { icone } from "../icones.js";
 
 const ROTULO_SITUACAO = { negativo: "divergência", baixo: "abaixo do mínimo", zerado: "zerado", ok: "" };
 
@@ -21,6 +25,7 @@ export function telaEstoque(raiz, ctx) {
     resumo.textContent = `${lista.length} ${lista.length === 1 ? "material" : "materiais"}`;
     corpo.replaceChildren(...(lista.length ? lista.map(linhaMaterial)
       : [el("p", { class: "nada" }, D.estado.materiais.length ? "Nenhum material com esse filtro." : "Nenhum material cadastrado ainda.")]));
+    carregarMiniaturas(corpo);
   }
 
   const chips = [["", "Todos"], ["baixo", "Abaixo do mínimo"], ["divergencia", "Divergência"]].map(([v, t]) =>
@@ -57,6 +62,7 @@ export function telaEstoque(raiz, ctx) {
 function linhaMaterial(m) {
   const sit = situacaoSaldo(m.saldo, m.minimo);
   return el("a", { href: `#/material/${m.id}`, class: `linha-material ${sit}${m.ativo ? "" : " inativo"}` },
+    miniatura(m.foto, "mini-lista"),
     el("span", { class: "lm-texto" },
       el("strong", {}, m.descricao),
       el("small", {}, [m.referencia ? `ref. ${m.referencia}` : "", m.codigo ? `Protheus ${m.codigo}` : "",
@@ -82,18 +88,35 @@ export function telaMaterial(raiz, ctx) {
     cabeca.replaceChildren(
       el("a", { href: "#/estoque", class: "voltar" }, "‹ Estoque"),
       el("h1", {}, m.descricao),
+      m.foto ? el("button", {
+        type: "button", class: "foto-material-pagina", "aria-label": "Ver a foto de referência",
+        onclick: () => verFoto(m.foto, m.descricao),
+      }, el("img", { alt: `Foto de referência: ${m.descricao}`, dataset: { foto: m.foto } })) : null,
       el("div", { class: `saldo-grande ${sit}` },
         el("strong", {}, formatarQtd(m.saldo)), el("span", {}, m.unidade),
         ROTULO_SITUACAO[sit] ? el("span", { class: `etiqueta ${sit}` }, ROTULO_SITUACAO[sit]) : null),
       el("dl", { class: "ficha" },
         ...[["Referência do fabricante", m.referencia], ["Código Protheus", m.codigo], ["Onde fica", m.local], ["Estoque mínimo", m.minimo ? `${formatarQtd(m.minimo)} ${m.unidade}` : ""],
-          ["Última movimentação", quando(m.ultima)], ["Situação", m.ativo ? "Ativo" : "Desativado"]]
+          ["Última movimentação", quando(m.ultima)], ["Última vistoria", quando(m.ultima_vistoria)],
+          ["Situação", m.ativo ? "Ativo" : "Desativado"]]
           .filter(([, v]) => v).flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)])),
       el("div", { class: "acoes" },
         D.podeRegistrar() && m.ativo ? el("a", { href: `#/saida?material=${m.id}`, class: "botao saida" }, "Registrar saída") : null,
         D.podeRegistrar() && m.ativo ? el("a", { href: `#/entrada?material=${m.id}`, class: "botao entrada" }, "Registrar entrada") : null,
-        D.ehAdmin() ? el("button", { type: "button", class: "botao", onclick: async () => { if (await dialogoMaterial(m)) desenhar(); } }, "Editar") : null),
+        D.ehAdmin() && m.ativo ? el("button", {
+          type: "button", class: "botao",
+          onclick: async () => { if (await dialogoConferir(m)) { desenhar(); lista.recarregar(); } },
+        }, icone("vistoria", 18), "Conferir") : null,
+        el("a", { href: `#/etiquetas?material=${m.id}`, class: "botao" }, icone("qr", 18), "Etiqueta QR"),
+        D.ehAdmin() ? el("button", {
+          type: "button", class: "botao",
+          onclick: async () => {
+            const r = await dialogoMaterial(m);
+            if (r === "apagado") location.hash = "#/estoque"; else if (r) desenhar();
+          },
+        }, "Editar") : null),
       el("h2", { class: "titulo-secao" }, "Movimentações"));
+    carregarMiniaturas(cabeca);
   }
 
   raiz.append(cabeca, lista.raiz);

@@ -10,7 +10,7 @@ const PERIODOS = [["0", "Hoje"], ["7", "7 dias"], ["30", "30 dias"], ["90", "90 
 
 export function telaHistorico(raiz, ctx) {
   const f = {
-    tipo: ["saida", "entrada"].includes(ctx.query.tipo) ? ctx.query.tipo : "",
+    tipo: ["saida", "entrada", "ajuste"].includes(ctx.query.tipo) ? ctx.query.tipo : "",
     periodo: PERIODOS.some(([v]) => v === ctx.query.periodo) ? ctx.query.periodo : "30",
     termo: "",
   };
@@ -18,7 +18,7 @@ export function telaHistorico(raiz, ctx) {
   const filtros = () => filtroHistorico({ tipo: f.tipo, desde: desde(), termo: f.termo });
   const lista = listaMovimentos({ filtros, vazio: "Nenhuma movimentação com esses filtros." });
 
-  const botoesTipo = [["", "Tudo"], ["saida", "Saídas"], ["entrada", "Entradas"]].map(([v, t]) =>
+  const botoesTipo = [["", "Tudo"], ["saida", "Saídas"], ["entrada", "Entradas"], ["ajuste", "Vistorias"]].map(([v, t]) =>
     el("button", {
       type: "button", class: `chip${f.tipo === v ? " ativo" : ""}`, "aria-pressed": String(f.tipo === v),
       onclick: (ev) => {
@@ -58,13 +58,16 @@ export function telaHistorico(raiz, ctx) {
         ["Data", "Tipo", "Material", "Referência do fabricante", "Código Protheus", "Quantidade", "Unidade",
           "Retirou", "Matrícula", "Frota", "Frota (descrição)", "Outro local / complemento",
           "Acompanhou / Recebeu", "Entregue por", "Documento", "Observação",
-          "Registrado por", "Situação", "Motivo do cancelamento", "Foto (arquivo)"],
+          "Registrado por", "Situação", "Motivo do cancelamento", "Foto (arquivo)",
+          "Vistoria: contado", "Vistoria: o sistema tinha"],
         linhas.map((m) => [
-          dataHora(m.registrado_em), m.tipo === "saida" ? "Saída" : "Entrada", m.material, m.referencia, m.codigo,
+          dataHora(m.registrado_em), { saida: "Saída", entrada: "Entrada", ajuste: "Vistoria" }[m.tipo] || m.tipo,
+          m.material, m.referencia, m.codigo,
           formatarQtd(m.quantidade), m.unidade, m.retirante, m.retirante_matricula, m.frota, m.frota_descricao,
           m.destino, m.responsavel, m.entregue_por, m.documento, m.obs, m.registrado_por_nome,
           m.cancelada_em ? `Cancelada em ${dataHora(m.cancelada_em)} por ${m.cancelada_por_nome || "—"}` : "Válida",
           m.motivo_cancelamento, m.foto,
+          m.tipo === "ajuste" ? formatarQtd(m.contado) : "", m.tipo === "ajuste" ? formatarQtd(m.saldo_antes) : "",
         ]));
       const hoje = new Date().toISOString().slice(0, 10);
       baixar(`movimentacoes-sala-aplicacao-direta-${hoje}.csv`, conteudo);

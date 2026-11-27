@@ -15,6 +15,8 @@ import { telaPessoas, telaPessoa } from "./telas/pessoas.js";
 import { telaAcessos, contarPendentes } from "./telas/acessos.js";
 import { telaConta } from "./telas/conta.js";
 import { telaFrotas, telaFrota } from "./telas/frotas.js";
+import { telaVistoria } from "./telas/vistoria.js";
+import { telaEtiquetas } from "./telas/etiquetas.js";
 
 const ROTAS = [
   [/^$/, "Início", telaInicio],
@@ -27,6 +29,8 @@ const ROTAS = [
   [/^pessoa\/(\d+)$/, "Pessoa", telaPessoa],
   [/^frotas$/, "Frotas", telaFrotas],
   [/^frota\/(\d+)$/, "Frota", telaFrota],
+  [/^vistoria$/, "Vistoria", telaVistoria],
+  [/^etiquetas$/, "Etiquetas QR", telaEtiquetas],
   [/^acessos$/, "Acessos", telaAcessos],
   [/^conta$/, "Minha conta", telaConta],
 ];
@@ -40,8 +44,12 @@ const MENU = [
     ["entrada", "Entrada", "entrada", () => D.podeRegistrar(), true],
     ["historico", "Histórico", "historico", () => true, true],
   ]],
-  ["Cadastros", [
+  ["Estoque", [
     ["estoque", "Estoque", "estoque", () => true, true],
+    ["vistoria", "Vistoria", "vistoria", () => D.ehAdmin(), false],
+    ["etiquetas", "Etiquetas QR", "qr", () => true, false],
+  ]],
+  ["Cadastros", [
     ["frotas", "Frotas", "caminhao", () => true, false],
     ["pessoas", "Pessoas", "pessoas", () => true, false],
   ]],

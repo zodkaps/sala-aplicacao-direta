@@ -64,7 +64,7 @@ export function cadastrosGuardados() {
 export async function carregarCadastros() {
   const [pessoas, materiais, frotas] = await Promise.all([
     supa.lerTudo("pessoas?select=id,nome,matricula,funcao,ativo&order=nome,id"),
-    supa.lerTudo("estoque?select=id,codigo,referencia,descricao,unidade,minimo,local,ativo,saldo,movimentos,ultima&order=descricao,id"),
+    supa.lerTudo("estoque?select=id,codigo,referencia,descricao,unidade,minimo,local,ativo,saldo,movimentos,ultima,foto,ultima_vistoria&order=descricao,id"),
     supa.lerTudo("frotas?select=id,numero,descricao,placa,ativo&order=numero,id"),
   ]);
   estado.pessoas = pessoas;
@@ -89,6 +89,11 @@ export function esquecerTudo() {
 export const pessoaPorId = (id) => estado.pessoas.find((p) => p.id === id) || null;
 export const materialPorId = (id) => estado.materiais.find((m) => m.id === id) || null;
 export const frotaPorId = (id) => estado.frotas.find((f) => f.id === id) || null;
+
+/** Tira da memória o que o administrador apagou. */
+export const removerMaterial = (id) => { estado.materiais = estado.materiais.filter((x) => x.id !== id); };
+export const removerPessoa = (id) => { estado.pessoas = estado.pessoas.filter((x) => x.id !== id); };
+export const removerFrota = (id) => { estado.frotas = estado.frotas.filter((x) => x.id !== id); };
 
 export function guardarFrotas(lista) {
   for (const f of lista) {

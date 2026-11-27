@@ -53,7 +53,10 @@ export function telaPessoa(raiz, ctx) {
       el("h1", {}, p.nome),
       el("p", { class: "explica" }, [detalhePessoa(p), p.ativo ? "" : "desativada"].filter(Boolean).join(" · ")),
       D.ehAdmin() ? el("div", { class: "acoes" },
-        el("button", { type: "button", class: "botao", onclick: async () => { if (await dialogoPessoa(p)) desenhar(); } }, "Editar")) : null,
+        el("button", {
+          type: "button", class: "botao",
+          onclick: async () => { const r = await dialogoPessoa(p); if (r === "apagado") location.hash = "#/pessoas"; else if (r) desenhar(); },
+        }, "Editar")) : null,
       el("h2", { class: "titulo-secao" }, "Retiradas e acompanhamentos"));
   }
 

@@ -1,6 +1,7 @@
 // Os ícones em linha (24×24, traço de 2 na cor do texto), os mesmos do painel
-// de programação da Makro. Montados com DOMParser a partir destes desenhos
-// fixos — nunca com texto de gente.
+// de programação da Makro. Os desenhos abaixo são fixos (nunca texto de gente)
+// e viram elementos SVG um a um, com createElementNS — sem interpretar HTML,
+// o que deixa o site funcionar com a proteção Trusted Types do navegador.
 
 const NS = "http://www.w3.org/2000/svg";
 
@@ -24,20 +25,27 @@ const DESENHOS = {
   visto: '<circle cx="12" cy="12" r="8.5"/><path d="M8.3 12.3l2.5 2.5 4.9-5.1"/>',
   sair: '<path d="M14.5 4.5h3a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2h-3"/><path d="M10 16.5L5.5 12 10 7.5M5.5 12h10"/>',
   colar: '<rect x="5.5" y="4.5" width="13" height="16" rx="2"/><path d="M9 4.5V3.5h6v1M9 10h6M9 13.5h6M9 17h3.5"/>',
+  lixeira: '<path d="M4.5 7h15M9.5 7V4.5h5V7"/><path d="M6.5 7l1 13h9l1-13"/><path d="M10 10.5v6M14 10.5v6"/>',
+  vistoria: '<rect x="5" y="4.5" width="14" height="16" rx="2"/><path d="M9 4.5V3h6v1.5"/><path d="M8.7 12.8l2.2 2.2 4.4-4.6"/>',
+  qr: '<rect x="3.5" y="3.5" width="7" height="7" rx="1"/><rect x="13.5" y="3.5" width="7" height="7" rx="1"/><rect x="3.5" y="13.5" width="7" height="7" rx="1"/><path d="M13.5 13.5h3v3h-3zM18.5 18.5h2v2h-2zM16.5 16.5h2v2h-2z"/>',
+  imprimir: '<path d="M7 9V3.5h10V9"/><rect x="3.5" y="9" width="17" height="7.5" rx="2"/><path d="M7 14h10v6.5H7z"/>',
 };
 
-let parser = null;
+const TAG = /<(path|circle|rect)\s+([^>]*?)\/>/g;
+const ATRIBUTO = /([a-z-]+)="([^"]*)"/g;
 
 /** O ícone como <svg>, na cor do texto em volta. */
 export function icone(nome, tam = 20) {
-  parser = parser || new DOMParser();
-  const doc = parser.parseFromString(`<svg xmlns="${NS}">${DESENHOS[nome] || ""}</svg>`, "image/svg+xml");
   const s = document.createElementNS(NS, "svg");
   for (const [k, v] of Object.entries({
     viewBox: "0 0 24 24", width: tam, height: tam, fill: "none", stroke: "currentColor",
     "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true", class: "ic",
   })) s.setAttribute(k, String(v));
-  for (const n of [...doc.documentElement.childNodes]) s.append(document.importNode(n, true));
+  for (const [, tag, attrs] of (DESENHOS[nome] || "").matchAll(TAG)) {
+    const e = document.createElementNS(NS, tag);
+    for (const [, k, v] of attrs.matchAll(ATRIBUTO)) e.setAttribute(k, v);
+    s.append(e);
+  }
   return s;
 }
 
