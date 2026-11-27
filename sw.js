@@ -32,6 +32,7 @@ const ARQUIVOS = [
   "./js/texto.js",
   "./js/foto.js",
   "./js/icones.js",
+  "./js/qr.js",
   "./js/telas/comum.js",
   "./js/telas/entrar.js",
   "./js/telas/inicio.js",
