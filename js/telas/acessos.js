@@ -89,6 +89,9 @@ export function telaAcessos(raiz) {
     try {
       const lista = await supa.rpc("listar_acessos");
       corpo.replaceChildren(...(lista && lista.length ? lista.map(linha) : [el("p", { class: "nada" }, "Nenhuma conta.")]));
+      // a bolinha do menu acompanha quantas contas ainda esperam liberação
+      const n = (lista || []).filter((a) => a.papel === "pendente").length;
+      for (const b of document.querySelectorAll(".pendentes")) { b.hidden = !n; b.textContent = String(n); }
     } catch (e) {
       corpo.replaceChildren(el("p", { class: "nada" }, e.message));
     }

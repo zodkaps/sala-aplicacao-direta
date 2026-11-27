@@ -81,9 +81,14 @@ export function telaVistoria(raiz) {
   const resumo = el("p", { class: "resumo-lista" });
   const conferidoHoje = (m) => !!m.ultima_vistoria && m.ultima_vistoria >= hoje;
 
-  function desenhar() {
+  function contar() {
     const ativos = D.estado.materiais.filter((m) => m.ativo);
     resumo.textContent = `${ativos.filter(conferidoHoje).length} de ${ativos.length} conferidos hoje`;
+    return ativos;
+  }
+
+  function desenhar() {
+    const ativos = contar();
     let lista = f.faltam ? ativos.filter((m) => !conferidoHoje(m)) : ativos;
     if (f.termo.trim()) lista = filtrar(lista, f.termo, (m) => [m.descricao, m.referencia, m.codigo, m.local], 2000);
     corpo.replaceChildren(...(lista.length ? lista.map(linha)
@@ -120,6 +125,7 @@ export function telaVistoria(raiz) {
         status.textContent = `Conferido agora: ${textoDaDiferenca(r, m.unidade)}`;
         cartao.classList.add("conferido");
         contado.value = "";
+        contar();
       } catch (e) {
         aviso(e.message, "erro", 6000);
       } finally { soltar(); }

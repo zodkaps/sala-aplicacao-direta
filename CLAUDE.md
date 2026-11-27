@@ -9,8 +9,11 @@ Supabase (projeto "Sala de Aplicação Direta", `ogaaapaondalugvezdtd`). O
 
 - **Não inventar dado.** Material, quantidade, quem retirou, quem acompanhou: o
   que a pessoa não disse fica vazio. Na dúvida, perguntar.
-- **Movimentação não se edita nem se apaga** — nem pelo SQL. Corrige-se
-  cancelando (`cancelar_movimentacao`, com motivo) e registrando de novo.
+- **Movimentação não se edita.** Engano do dia a dia: cancelar
+  (`cancelar_movimentacao`, com motivo) e registrar de novo. Registro de teste:
+  o administrador apaga pelo site (`apagar_movimentacao`, com motivo; a cópia
+  fica em `apagados`). O Claude não apaga pelo SQL sem a pessoa pedir, e
+  confere antes o que vai sair.
 - **Gravar no banco pede confirmação.** Mudança de esquema vai para
   `sql/01_esquema.sql` (que tem de poder rodar de novo) e é seguida do
   `sql/90_testar_regras.sql` no projeto.
@@ -29,6 +32,20 @@ Supabase (projeto "Sala de Aplicação Direta", `ogaaapaondalugvezdtd`). O
   dos dois). Entrada não tem frota (`entrada_sem_frota`).
 - O material tem `referencia` (do fabricante) e `codigo` (Protheus).
 
+## Vistoria, acessos e etiquetas
+
+- **Vistoria** é o tipo `ajuste` em `movimentacoes`, só do administrador: o site
+  manda o `contado`; o gatilho lê o saldo (com trava por material), grava
+  `saldo_antes` e a diferença em `quantidade` (pode ser negativa ou zero). Sem
+  foto, pessoa nem frota. O saldo soma entrada e ajuste e tira saída.
+- **Contas** se criam pelo site (Acessos), pela função `acessos` do Supabase
+  (`supabase/functions/acessos`): `index.ts` confere a sessão e o papel admin e
+  usa a chave de administrador que só existe lá; `logica.js` é testada no
+  `testes/unidade.mjs` e roda no Supabase de mentira. Mudou a função? Publicar
+  de novo (deploy) com *verify_jwt* desligado. Senha: 8+, letras e números.
+- **QR Code** é do próprio site (`js/qr.js`, sem biblioteca de fora), testado
+  com os exemplos da norma e lido de volta por `testes/ler_qr.mjs`.
+
 ## Visual
 
 Padrão Makro, o mesmo do painel de programação (`gestaomkt`): azul-marinho
@@ -41,6 +58,13 @@ padrão, escuro no ◐. Cor nova vai como variável no `:root` do `css/app.css`.
 ## Segurança
 
 - Texto de gente entra na tela por `el()` (nós de texto), nunca como HTML.
+  O site roda com **Trusted Types** (CSP `require-trusted-types-for 'script'`):
+  nada de innerHTML, DOMParser nem script por texto; endereço de script novo
+  (como o `sw.js`) passa pela política `sad` do `js/app.js`.
+- O site não abre em moldura (iframe) e não manda *referrer*. Ao sair, o
+  aparelho esquece tudo de quem usou (fica só a escolha de claro/escuro).
+- Só o administrador vê a lista de contas e e-mails (`listar_acessos`); o nome
+  de quem registrou chega ao histórico por `privado.nome_do_perfil`.
 - Nada de script dentro do HTML, nem biblioteca ou servidor fora da CSP do
   `index.html`. A única chave no código é a publicável (`sb_publishable_…`).
 - Quem decide o que cada um pode é o banco (RLS, privilégio por coluna, gatilho
