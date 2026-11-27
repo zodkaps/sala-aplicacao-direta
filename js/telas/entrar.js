@@ -5,6 +5,7 @@
 
 import { el, campo, campoSenha, ocupar } from "../ui.js";
 import * as supa from "../supa.js";
+import { emailValido } from "../texto.js";
 
 export const GUARDA_EMAIL = "sad.email";
 
@@ -21,7 +22,7 @@ export function telaEntrar(raiz, { aoEntrar, motivo = "" }) {
     ev.preventDefault();
     mensagem.hidden = true;
     const e = email.value.trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) { mostrar("Digite o seu e-mail."); return; }
+    if (!emailValido(e)) { mostrar("Digite o seu e-mail."); return; }
     if (!senha.value) { mostrar("Digite a sua senha."); return; }
     const soltar = ocupar(enviar, "Entrando…");
     try {

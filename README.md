@@ -28,7 +28,7 @@ botões grandes do início e na tela de registrar. Claro por padrão; o escuro f
 | **Histórico** | Tudo o que entrou, saiu e foi conferido, com a foto, filtro por tipo (saídas, entradas, vistorias), período e busca (material, pessoa, frota, nota). **Exportar planilha** gera um CSV que o Excel abre. |
 | **Frotas** (menu) | A lista que aparece na saída. O administrador cadastra uma a uma ou **cola a lista do Excel** (número, modelo, placa) de uma vez. Cada frota tem a página com as peças aplicadas nela. |
 | **Pessoas** (menu) | Quem retira, recebe ou acompanha. Não precisa ter conta no site. Cada pessoa tem a página do que retirou e acompanhou. |
-| **Acessos** (menu, administrador) | **Cria o acesso** de cada pessoa (nome, e-mail, acesso e uma senha provisória), dá **senha nova** a quem esqueceu e muda o acesso de cada um. |
+| **Acessos** (menu, administrador) | **Cria o acesso** de cada pessoa (nome, e-mail, acesso e uma senha provisória), dá **senha nova** a quem esqueceu e muda o acesso de cada um. O e-mail é só o nome de entrar (o site não manda e-mail): vale o da empresa, mesmo sem o final (.com.br). |
 
 Cada material tem a **referência do fabricante** (o número da peça no catálogo)
 e o **código Protheus**; a busca acha pelos dois, mesmo digitados sem espaço,

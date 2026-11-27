@@ -179,6 +179,23 @@ export function senhaFraca(s) {
   return "";
 }
 
+/** O e-mail aqui é só o nome de entrar (o site não manda e-mail), então vale o
+ *  que o navegador aceita num campo de e-mail e o Supabase aceita ao criar a
+ *  conta — inclusive o domínio sem ponto ("nome.sobrenome@empresa"), como o
+ *  e-mail da empresa (pedido do PCM, 27/11/2026). A mesma regra da função
+ *  `acessos` (supabase/functions/acessos/logica.js). */
+const EMAIL = /^[a-zA-Z0-9!#$%&'*+\/=?^_`{|}~-]+(?:\.[a-zA-Z0-9!#$%&'*+\/=?^_`{|}~-]+)*@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+
+export function emailValido(e) {
+  const t = String(e ?? "");
+  return t.length <= 254 && EMAIL.test(t);
+}
+
+/** E-mail que vale mas não tem o final do domínio (.com.br, .com…). */
+export function emailSemFinal(e) {
+  return emailValido(e) && !String(e).split("@")[1].includes(".");
+}
+
 /** Senha provisória fácil de ditar: uma maiúscula, quatro minúsculas e cinco
  *  números, sem as letras que se confundem (i, l, o). Ex.: "Kpwzr48273". */
 export function gerarSenha() {

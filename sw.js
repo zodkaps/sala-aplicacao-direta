@@ -8,7 +8,7 @@
 // Mudou um arquivo? Mantenha a lista abaixo em dia e suba a VERSAO — o
 // testes/unidade.mjs acusa arquivo de js/ ou css/ que falte na lista.
 
-const VERSAO = "sad-v5";
+const VERSAO = "sad-v6";
 const ARQUIVOS = [
   "./",
   "./index.html",

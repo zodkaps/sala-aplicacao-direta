@@ -267,6 +267,39 @@ teste("função acessos: senha provisória para quem já tem conta", async () =>
   assert.equal((await FN.tratar({ acao: "apagar-tudo" }, a)).status, 400);
 });
 
+teste("e-mail: a mesma regra no site e na função, e vale domínio sem ponto (o da empresa)", () => {
+  const vale = ["nome.sobrenome@empresa", "a@b.com.br", "x+obra@sub.empresa-teste.com", "Joana.Teste@EMPRESA", "a_b-c@e1"];
+  const naoVale = ["", "sem-arroba", "a@", "@empresa", "a b@empresa", "a@b@c", "a@.empresa", "a@empresa.", "a..b@empresa",
+    ".a@empresa", "a.@empresa", "joão@empresa", "a@-empresa", "a@empresa-", "a@em..presa", "a@em presa", `${"a".repeat(250)}@empresa`];
+  for (const e of vale) { assert.ok(T.emailValido(e), e); assert.ok(FN.emailValido(e), e); }
+  for (const e of naoVale) { assert.ok(!T.emailValido(e), e); assert.ok(!FN.emailValido(e), e); }
+  assert.ok(T.emailSemFinal("nome.sobrenome@empresa"));
+  for (const e of ["a@b.com.br", "lixo", "", null]) assert.ok(!T.emailSemFinal(e), String(e));
+});
+
+teste("função acessos: cria a conta com e-mail sem o final (.com.br)", async () => {
+  const a = adminFalso();
+  const r = await FN.tratar({ acao: "criar", email: " Joana.Teste@Oficina-Teste ", nome: "Joana", senha: "Abcd12345", papel: "operador" }, a);
+  assert.equal(r.status, 200, JSON.stringify(r.corpo));
+  assert.equal(a.contas.get(r.corpo.id).email, "joana.teste@oficina-teste");
+});
+
+teste("função acessos: cada recusa do Supabase vira a mensagem certa", async () => {
+  const recusa = (error) => ({ auth: { admin: { createUser: async () => ({ data: null, error }) } } });
+  const pedido = { acao: "criar", email: "f@oficina-teste", nome: "Fulano", senha: "Abcd12345", papel: "consulta" };
+  for (const [error, status, msg] of [
+    [{ status: 422, code: "weak_password", message: "Password should contain at least one character of each: ..." }, 400, /senha/],
+    [{ status: 422, code: "email_exists", message: "A user with this email address has already been registered" }, 409, /Já existe/],
+    [{ status: 422, message: "A user with this email address has already been registered" }, 409, /Já existe/],
+    [{ status: 400, code: "validation_failed", message: "Unable to validate email address: invalid format" }, 400, /e-mail/],
+    [{ status: 500, message: "Database error creating new user" }, 502, /não criou/],
+  ]) {
+    const r = await FN.tratar(pedido, recusa(error));
+    assert.equal(r.status, status, error.message);
+    assert.match(r.corpo.erro, msg);
+  }
+});
+
 teste("senha provisória gerada sempre passa na regra (a mesma no site e na função)", () => {
   for (let i = 0; i < 300; i++) {
     const s = T.gerarSenha();
@@ -326,7 +359,8 @@ teste("Trusted Types ligado, sem referrer, e nada no código que interprete HTML
 });
 
 teste("nenhum e-mail de verdade no repositório (ele é público; nome da equipe também não entra)", () => {
-  const proibidos = /@(gmail|hotmail|outlook|yahoo|live|icloud|bol|uol|terra|makro)\./i;
+  // "@(makro)" com parênteses: o próprio texto daqui não casa com a regra.
+  const proibidos = /@(gmail|hotmail|outlook|yahoo|live|icloud|bol|uol|terra)\.|@(makro)/i;
   const pastas = ["js", "css", "sql", "testes", "supabase"].flatMap((d) => arquivos(join(RAIZ, d)));
   for (const f of [...pastas, ...["README.md", "CLAUDE.md", "index.html", "sw.js"].map((x) => join(RAIZ, x))]) {
     if (!existsSync(f)) continue;

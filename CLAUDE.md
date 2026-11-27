@@ -43,6 +43,9 @@ Supabase (projeto "Sala de Aplicação Direta", `ogaaapaondalugvezdtd`). O
   usa a chave de administrador que só existe lá; `logica.js` é testada no
   `testes/unidade.mjs` e roda no Supabase de mentira. Mudou a função? Publicar
   de novo (deploy) com *verify_jwt* desligado. Senha: 8+, letras e números.
+  E-mail: `emailValido` (`js/texto.js`, a mesma regra na função), o que o
+  navegador e o Supabase aceitam — inclusive domínio sem ponto (`nome@empresa`,
+  pedido do PCM, 27/11/2026): é só o nome de entrar, o site não manda e-mail.
 - **QR Code** é do próprio site (`js/qr.js`, sem biblioteca de fora), testado
   com os exemplos da norma e lido de volta por `testes/ler_qr.mjs`.
 

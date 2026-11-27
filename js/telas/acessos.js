@@ -6,7 +6,7 @@
 import { el, campo, ocupar, aviso, janela } from "../ui.js";
 import * as supa from "../supa.js";
 import * as D from "../dados.js";
-import { PAPEIS, quando, senhaFraca, gerarSenha } from "../texto.js";
+import { PAPEIS, quando, senhaFraca, gerarSenha, emailValido, emailSemFinal } from "../texto.js";
 import { titulo } from "./comum.js";
 
 const ACESSOS_CRIAVEIS = ["consulta", "operador", "admin"];
@@ -57,7 +57,16 @@ export function telaAcessos(raiz) {
 
   // ── criar acesso ──
   const nome = el("input", { type: "text", maxlength: 80, autocomplete: "off", autocapitalize: "words" });
-  const email = el("input", { type: "email", maxlength: 254, autocomplete: "off", inputmode: "email", autocapitalize: "none" });
+  const email = el("input", {
+    type: "email", maxlength: 254, autocomplete: "off", inputmode: "email", autocapitalize: "none",
+    "aria-describedby": "email-sem-final",
+  });
+  // E-mail sem o final (.com.br) vale: é só o nome de entrar. O aviso é para a
+  // pessoa conferir antes, porque depois de criada a conta o e-mail não muda.
+  const semFinal = el("small", { class: "ajuda", id: "email-sem-final", hidden: true },
+    "Sem o final (.com.br…): serve para entrar no site — a pessoa vai digitar exatamente assim.");
+  email.addEventListener("input", () => { semFinal.hidden = true; });
+  email.addEventListener("change", () => { semFinal.hidden = !emailSemFinal(email.value.trim().toLowerCase()); });
   const papel = el("select", {}, ...ACESSOS_CRIAVEIS.map((v) => el("option", { value: v, selected: v === "operador" }, PAPEIS[v])));
   const prov = campoProvisoria();
   const erro = el("p", { class: "erro-campo", hidden: true });
@@ -71,14 +80,15 @@ export function telaAcessos(raiz) {
     const n = nome.value.trim().replace(/\s+/g, " ");
     const s = prov.senha.value;
     const problema = n.length < 2 ? "Escreva o nome da pessoa."
-      : !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) ? "Escreva o e-mail da pessoa (é com ele que ela entra)."
-        : senhaFraca(s);
+      : !e ? "Escreva o e-mail da pessoa (é com ele que ela entra)."
+        : !emailValido(e) ? "Esse e-mail não vale: sem acento nem espaço, e com um @ só (ex.: nome.sobrenome@empresa)."
+          : senhaFraca(s);
     if (problema) { erro.textContent = problema; erro.hidden = false; return; }
     const soltar = ocupar(criar, "Criando…");
     try {
       await supa.funcao("acessos", { acao: "criar", nome: n, email: e, senha: s, papel: papel.value });
       resultado.replaceChildren(entrega(n, e, s));
-      nome.value = ""; email.value = ""; prov.senha.value = gerarSenha();
+      nome.value = ""; email.value = ""; semFinal.hidden = true; prov.senha.value = gerarSenha();
       await carregar();
     } catch (x) {
       erro.textContent = x.message; erro.hidden = false;
@@ -156,7 +166,7 @@ export function telaAcessos(raiz) {
     titulo("Acessos"),
     el("form", { class: "formulario cartao criar-acesso", onsubmit: enviar },
       el("h2", {}, "Criar acesso"),
-      el("div", { class: "dupla" }, campo("Nome", nome), campo("E-mail", email)),
+      el("div", { class: "dupla" }, campo("Nome", nome), el("div", { class: "campo-email" }, campo("E-mail", email), semFinal)),
       campo("Acesso", papel),
       prov.raiz, erro,
       el("div", { class: "acoes" }, criar)),

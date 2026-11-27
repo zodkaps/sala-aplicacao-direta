@@ -170,18 +170,22 @@ await page.getByRole("button", { name: /Acessos/ }).click();
 const criarAcesso = page.locator("form.criar-acesso");
 await criarAcesso.waitFor();
 await criarAcesso.getByLabel("Nome", { exact: true }).fill("Bruno Operador");
-await criarAcesso.getByLabel("E-mail", { exact: true }).fill("bruno@exemplo-teste.com.br");
+await criarAcesso.getByLabel("E-mail", { exact: true }).fill("bruno.operador@oficina-teste");
+await criarAcesso.getByLabel("E-mail", { exact: true }).blur();
+await criarAcesso.locator("#email-sem-final").waitFor(); // e-mail sem o final (.com.br): vale, com o aviso
+await tela(page, "02a-acessos-aviso");
 await criarAcesso.locator("select").selectOption("operador");
 const senhaBruno = await criarAcesso.locator("input.senha-provisoria").inputValue();
 assert.equal(senhaFraca(senhaBruno), "", senhaBruno);
 await semRolagemLateral(page, "acessos");
 await criarAcesso.getByRole("button", { name: "Criar acesso" }).click();
 await page.getByText("Pronto: acesso de Bruno Operador").waitFor();
-const bruno = db.perfis.find((p) => p.email === "bruno@exemplo-teste.com.br");
+assert.ok(await criarAcesso.locator("#email-sem-final").isHidden(), "o aviso sai com o formulário limpo");
+const bruno = db.perfis.find((p) => p.email === "bruno.operador@oficina-teste");
 assert.equal(bruno.papel, "operador");
 assert.equal(db.usuarios.find((u) => u.id === bruno.id).senha, senhaBruno);
 await tela(page, "02a-acessos");
-passo("administrador cria o acesso com senha provisória, já com o acesso escolhido");
+passo("administrador cria o acesso com senha provisória, já com o acesso escolhido (e-mail sem o final .com.br)");
 
 const pend = page.locator(".acesso.pendente");
 await pend.waitFor();
@@ -510,7 +514,7 @@ passo("etiqueta QR do material: o QR lido de volta dá o endereço da página de
 
 // ── operador ──
 await sairPeloMenu(page);
-await entrar(page, "bruno@exemplo-teste.com.br", senhaBruno);
+await entrar(page, "bruno.operador@oficina-teste", senhaBruno);
 await page.getByRole("heading", { name: "Olá, Bruno" }).waitFor();
 await page.locator(".atalho.saida").waitFor();
 await page.locator("#bmenu").click();

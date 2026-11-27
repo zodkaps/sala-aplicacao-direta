@@ -160,6 +160,10 @@ function aplicar(linhas, params) {
   return out.slice(off, off + lim);
 }
 
+// O formato de e-mail que o Supabase aceita ao criar a conta (checkmail): a
+// parte da frente com pontos só entre os pedaços, e o domínio com ou sem ponto.
+const EMAIL_DO_SUPABASE = /^[a-z0-9!#$%&'*+\/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+\/=?^_`{|}~-]+)*@[a-z0-9-]+(?:\.[a-z0-9-]+)*$/i;
+
 /** O cliente de administrador do Supabase, imitado sobre este banco, para a
  *  lógica da função `acessos` (a mesma que está publicada) rodar no teste. */
 function adminDoBanco(db) {
@@ -167,6 +171,7 @@ function adminDoBanco(db) {
     auth: {
       admin: {
         async createUser({ email, password, user_metadata }) {
+          if (!EMAIL_DO_SUPABASE.test(email)) return { data: null, error: { status: 400, code: "validation_failed", message: "Unable to validate email address: invalid format" } };
           if (db.usuarios.some((u) => u.email === email)) return { data: null, error: { status: 422, message: "A user with this email address has already been registered" } };
           const id = criarUsuario(db, { email, senha: password, nome: user_metadata.nome });
           return { data: { user: { id } }, error: null };
