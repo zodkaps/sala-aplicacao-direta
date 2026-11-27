@@ -129,9 +129,10 @@ function botaoApagar(rotulo, aoApagar, fechar) {
   return el("button", {
     type: "button", class: "botao perigo",
     onclick: async (ev) => {
+      const botao = ev.currentTarget;  // depois do await o evento já não diz qual foi
       if (!(await confirmar(`Apagar ${rotulo} de vez? Isso não tem volta (fica só uma cópia de segurança, que o administrador vê no banco).`,
         { sim: "Apagar", perigo: true }))) return;
-      const soltar = ocupar(ev.currentTarget, "Apagando…");
+      const soltar = ocupar(botao, "Apagando…");
       try {
         await aoApagar();
         aviso("Cadastro apagado.");
@@ -487,11 +488,12 @@ export function abrirMovimento(m, aoMudar) {
       ? el("button", {
         type: "button", class: "botao perigo",
         onclick: async (ev) => {
+          const botao = ev.currentTarget;
           const motivo = await perguntar(
             "O registro não é apagado: ele fica no histórico como cancelado e sai da conta do saldo.",
             { rotulo: "Motivo do cancelamento", minimo: 5, botao: "Cancelar registro", perigo: true });
           if (!motivo) return;
-          const soltar = ocupar(ev.target, "Cancelando…");
+          const soltar = ocupar(botao, "Cancelando…");
           try {
             await supa.rpc("cancelar_movimentacao", { p_id: m.id, p_motivo: motivo });
             aviso("Registro cancelado.");
@@ -508,12 +510,13 @@ export function abrirMovimento(m, aoMudar) {
       ? el("button", {
         type: "button", class: "botao perigo",
         onclick: async (ev) => {
+          const botao = ev.currentTarget;
           const motivo = await perguntar(
             "Apagar este registro de vez? Ele sai do histórico e da conta do saldo, e a foto é apagada. " +
             "Para engano do dia a dia, prefira Cancelar: o registro fica, marcado.",
             { rotulo: "Por que apagar? (ex.: registro de teste)", minimo: 3, botao: "Apagar de vez", perigo: true });
           if (!motivo) return;
-          const soltar = ocupar(ev.target, "Apagando…");
+          const soltar = ocupar(botao, "Apagando…");
           try {
             const foto = await supa.rpc("apagar_movimentacao", { p_id: m.id, p_motivo: motivo });
             if (foto) supa.apagarFotos([foto, miniaturaDe(foto)]).catch(() => {});

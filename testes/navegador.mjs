@@ -14,6 +14,8 @@ import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { criarBanco, criarUsuario, instalar } from "./supabase_falso.mjs";
+import { lerQRdoSVG } from "./ler_qr.mjs";
+import { senhaFraca } from "../js/texto.js";
 
 // `require` acha o Playwright instalado no projeto (npm i -D playwright) ou o global.
 const { chromium, devices } = createRequire(import.meta.url)("playwright");
@@ -107,6 +109,7 @@ async function sairPeloMenu(page) {
   await page.getByRole("button", { name: "Sair deste aparelho" }).click();
   await page.getByRole("button", { name: "Sair", exact: true }).click();
   await page.locator('input[type="email"]').waitFor();
+  assert.equal(await page.locator('input[type="email"]').inputValue(), "", "sair apaga o e-mail lembrado");
 }
 
 async function cadastrarNoSeletor(page, rotulo, termo, preencher) {
@@ -151,31 +154,50 @@ await page.getByRole("button", { name: "Ocultar a senha" }).click();
 assert.equal(await campoDaSenha.getAttribute("type"), "password");
 passo("o botão Mostrar deixa ver a senha e Ocultar esconde de novo");
 
-// criar conta → aguardando liberação
-await page.getByRole("button", { name: "Primeira vez? Criar conta" }).click();
-await page.getByLabel("Seu nome (como aparece para a equipe)").fill("Bruno Operador");
-await page.locator('input[type="email"]').fill("bruno@exemplo-teste.com.br");
-await page.locator('input[type="password"]').fill("senha-bruno-1");
-await page.getByRole("button", { name: "Criar conta" }).click();
-await page.getByText("aguardando liberação").waitFor();
-assert.equal(db.perfis.find((p) => p.email === "bruno@exemplo-teste.com.br").papel, "pendente");
-passo("conta nova fica aguardando liberação");
-await page.getByRole("button", { name: "Sair" }).click();
+// sem cadastro aberto: quem cria o acesso é o administrador
+assert.equal(await page.getByRole("button", { name: /Criar conta/ }).count(), 0);
+await page.getByText("Peça ao administrador do PCM").waitFor();
+passo("entrar não tem cadastro aberto: o acesso é criado pelo administrador");
 
-// administrador libera
+// o administrador cria o acesso do operador (senha provisória) e libera uma conta antiga
+criarUsuario(db, { email: "eva.antiga@exemplo-teste.com.br", senha: "Antiga12345", nome: "Eva Antiga" }); // pendente
 await entrar(page, "ana.admin@exemplo-teste.com.br", "senha-admin-1");
 await page.getByRole("heading", { name: "Olá, Ana" }).waitFor();
 await page.locator("#bmenu .bolinha", { hasText: "1" }).waitFor();
 await tela(page, "02-inicio-vazio");
 await page.locator("#bmenu").click();
 await page.getByRole("button", { name: /Acessos/ }).click();
+const criarAcesso = page.locator("form.criar-acesso");
+await criarAcesso.waitFor();
+await criarAcesso.getByLabel("Nome", { exact: true }).fill("Bruno Operador");
+await criarAcesso.getByLabel("E-mail", { exact: true }).fill("bruno@exemplo-teste.com.br");
+await criarAcesso.locator("select").selectOption("operador");
+const senhaBruno = await criarAcesso.locator("input.senha-provisoria").inputValue();
+assert.equal(senhaFraca(senhaBruno), "", senhaBruno);
+await semRolagemLateral(page, "acessos");
+await criarAcesso.getByRole("button", { name: "Criar acesso" }).click();
+await page.getByText("Pronto: acesso de Bruno Operador").waitFor();
+const bruno = db.perfis.find((p) => p.email === "bruno@exemplo-teste.com.br");
+assert.equal(bruno.papel, "operador");
+assert.equal(db.usuarios.find((u) => u.id === bruno.id).senha, senhaBruno);
+await tela(page, "02a-acessos");
+passo("administrador cria o acesso com senha provisória, já com o acesso escolhido");
+
 const pend = page.locator(".acesso.pendente");
 await pend.waitFor();
-await pend.locator("select").selectOption("operador");
+await pend.locator("select").selectOption("consulta");
 await pend.getByRole("button", { name: "Liberar" }).click();
 await page.getByText("Acesso salvo.").waitFor();
-assert.equal(db.perfis.find((p) => p.email === "bruno@exemplo-teste.com.br").papel, "operador");
-passo("administrador libera o acesso pelo site");
+const eva = db.perfis.find((p) => p.email === "eva.antiga@exemplo-teste.com.br");
+assert.equal(eva.papel, "consulta");
+await page.locator(".acesso", { hasText: "Eva Antiga" }).getByRole("button", { name: "Senha nova" }).click();
+const dlgSenha = page.locator("dialog[open]");
+const senhaEva = await dlgSenha.locator("input.senha-provisoria").inputValue();
+await dlgSenha.getByRole("button", { name: "Dar esta senha" }).click();
+await dlgSenha.getByText("Pronto: acesso de Eva Antiga").waitFor();
+assert.equal(db.usuarios.find((u) => u.id === eva.id).senha, senhaEva);
+await dlgSenha.locator("button.botao", { hasText: "Fechar" }).click();
+passo("conta antiga liberada como consulta e com senha nova dada pelo administrador");
 
 // ── frotas: colar a lista do Excel ──
 await page.locator("#bmenu").click();
@@ -200,6 +222,8 @@ await page.getByLabel("Tirar foto").setInputFiles(await foto(1600, 1200, "#16653
 await page.getByText("Foto enviada ✓").waitFor();
 await cadastrarNoSeletor(page, "Material", "Graxa de lítio EP2 para rolamentos de roda", async (d) => {
   await d.locator("select").selectOption("KG");
+  await d.getByLabel("Tirar foto do material").setInputFiles(await foto(900, 900, "#334155"));
+  await d.getByText("Foto pronta").waitFor();
   await d.getByLabel("Referência do fabricante").fill("SKF LGWA 2/1");
   await d.getByLabel("Código Protheus").fill("000123456");
   await d.getByLabel("Estoque mínimo").fill("4");
@@ -216,6 +240,7 @@ await page.getByRole("button", { name: "Registrar entrada" }).click();
 await page.getByRole("heading", { name: "Entrada registrada" }).waitFor();
 assert.equal(db.materiais[0].referencia, "SKF LGWA 2/1");
 assert.equal(db.materiais[0].codigo, "000123456");
+assert.ok(db.objetos.has(db.materiais[0].foto) && db.objetos.has(db.materiais[0].foto.replace(".jpg", "-p.jpg")), "foto de referência no bucket");
 await page.getByText("Saldo agora: 10 KG").waitFor();
 assert.equal(db.movimentacoes.length, 1);
 const ent = db.movimentacoes[0];
@@ -250,7 +275,10 @@ passo("saída sem foto/material/retirante é barrada na tela, com o que falta");
 await page.getByLabel("Tirar foto").setInputFiles(await foto(1200, 1600, "#9a3412"));
 await page.locator(".erro-caixa").waitFor({ state: "hidden" });
 await page.getByLabel("Material", { exact: true }).fill("gra");
+await page.waitForFunction(() => { const i = document.querySelector(".opcao .mini-sel img"); return i && i.complete && i.naturalWidth > 0; });
 await page.locator(".opcao", { hasText: "Graxa de lítio" }).click();
+await page.waitForFunction(() => { const i = document.querySelector(".foto-escolhido img"); return i && i.complete && i.naturalWidth > 0; });
+passo("a foto de referência do material aparece na busca e no material escolhido");
 await page.getByRole("button", { name: "Aumentar" }).click();
 await page.getByRole("button", { name: "Aumentar" }).click();
 assert.equal(await page.locator(".qtd-campo").inputValue(), "3");
@@ -401,17 +429,96 @@ await page.waitForFunction(() => document.querySelectorAll(".mov").length === 1)
 await semRolagemLateral(page, "página da frota");
 passo("a página da frota mostra as peças aplicadas nela");
 
+// ── vistoria (administrador): o saldo vira o contado ──
+await page.locator("#bmenu").click();
+await page.getByRole("button", { name: "Vistoria" }).click();
+const lv = page.locator(".linha-vistoria", { hasText: "Graxa de lítio" });
+await lv.waitFor();
+await lv.locator(".conta-campo").fill("10");
+await lv.getByRole("button", { name: "Gravar" }).click();
+await lv.locator(".status-vistoria", { hasText: "Conferido agora: +2 KG" }).waitFor();
+let aj = db.movimentacoes.at(-1);
+assert.deepEqual([aj.tipo, aj.quantidade, aj.saldo_antes, aj.contado], ["ajuste", 2, 8, 10]);
+await lv.getByRole("button", { name: "Confere" }).click();
+await lv.locator(".status-vistoria", { hasText: "confere com o sistema" }).waitFor();
+aj = db.movimentacoes.at(-1);
+assert.deepEqual([aj.tipo, aj.quantidade], ["ajuste", 0]);
+await semRolagemLateral(page, "vistoria");
+await tela(page, "13-vistoria");
+await page.goto(`${SITE}#/historico?tipo=ajuste`);
+await page.waitForFunction(() => document.querySelectorAll(".mov.ajuste").length === 2);
+passo("vistoria: o saldo vira o contado (+2) e o \"confere\" também fica no histórico");
+
+// ── apagar de vez (administrador): o registro e a foto saem ──
+await page.goto(`${SITE}#/historico`);
+await page.locator(".mov.saida", { hasText: "Oficina" }).click();
+const apagarSaida = db.movimentacoes.find((m) => m.destino === "Oficina");
+await page.locator("dialog[open]").getByRole("button", { name: "Apagar de vez" }).click();
+const dlgMotivo = page.locator("dialog[open]").last();
+await dlgMotivo.locator("textarea").fill("registro de teste");
+await dlgMotivo.getByRole("button", { name: "Apagar de vez" }).click();
+await page.getByText("Registro apagado.").waitFor();
+await page.waitForFunction(() => !document.querySelector("dialog[open]"));
+assert.ok(!db.movimentacoes.includes(apagarSaida), "o registro saiu");
+assert.equal(db.apagados.at(-1).motivo, "registro de teste");
+await page.waitForFunction(() => true);
+for (let i = 0; i < 20 && db.objetos.has(apagarSaida.foto); i++) await page.waitForTimeout(100);
+assert.ok(!db.objetos.has(apagarSaida.foto) && !db.objetos.has(apagarSaida.foto.replace(".jpg", "-p.jpg")), "a foto saiu do bucket");
+passo("administrador apaga um registro de teste: some do histórico, a foto sai e fica a cópia");
+
+// apagar cadastro: o que tem movimentação não sai; o que não tem, sai
+await page.goto(`${SITE}#/pessoas`);
+await page.getByRole("button", { name: "+ Pessoa" }).click();
+await page.locator("dialog[open]").getByLabel("Nome", { exact: true }).fill("Pessoa de Teste");
+await page.locator("dialog[open]").getByRole("button", { name: "Cadastrar" }).click();
+await page.locator(".linha-pessoa", { hasText: "Pessoa de Teste" }).click();
+await page.getByRole("button", { name: "Editar" }).click();
+await page.locator("dialog[open]").getByRole("button", { name: "Apagar" }).click();
+await page.locator("dialog[open]").last().getByRole("button", { name: "Apagar", exact: true }).click();
+await page.getByText("Cadastro apagado.").waitFor();
+await page.waitForFunction(() => location.hash === "#/pessoas");
+assert.ok(!db.pessoas.some((p) => p.nome === "Pessoa de Teste"));
+await page.locator(".linha-pessoa", { hasText: "João Mecânico" }).click();
+await page.getByRole("button", { name: "Editar" }).click();
+await page.locator("dialog[open]").getByRole("button", { name: "Apagar" }).click();
+await page.locator("dialog[open]").last().getByRole("button", { name: "Apagar", exact: true }).click();
+await page.getByText("tem movimentações e não pode ser apagado").waitFor();
+assert.ok(db.pessoas.some((p) => p.nome === "João Mecânico"));
+await page.locator("dialog[open] .fechar").click();
+passo("apagar cadastro: o sem uso sai; o que tem movimentação é recusado, com o porquê");
+
+// ── etiquetas QR: a etiqueta leva ao endereço do material ──
+const idGraxa = db.materiais.find((m) => m.descricao.startsWith("Graxa")).id;
+await page.goto(`${SITE}#/material/${idGraxa}`);
+await page.getByRole("link", { name: "Etiqueta QR" }).click();
+await page.locator(".etiqueta-qr").first().waitFor();
+assert.equal(await page.locator(".etiqueta-qr").count(), 1);
+const qr = await page.locator(".etiqueta-qr svg.qr").first().evaluate((s) => ({
+  d: s.querySelector("path").getAttribute("d"), lado: Number(s.getAttribute("viewBox").split(" ")[2]),
+}));
+assert.equal(lerQRdoSVG(qr.d, qr.lado), `${SITE}#/material/${idGraxa}`);
+await semRolagemLateral(page, "etiquetas");
+await tela(page, "14-etiquetas");
+await page.emulateMedia({ media: "print" });
+assert.ok(!(await page.locator("#abas").isVisible()) && !(await page.locator("#topo").isVisible()), "na impressão só a folha");
+assert.ok(await page.locator(".folha-etiquetas").isVisible());
+await tela(page, "15-etiquetas-impressao");
+await page.emulateMedia({ media: "screen" });
+passo("etiqueta QR do material: o QR lido de volta dá o endereço da página dele, e a impressão sai só com a folha");
+
 // ── operador ──
 await sairPeloMenu(page);
-await entrar(page, "bruno@exemplo-teste.com.br", "senha-bruno-1");
+await entrar(page, "bruno@exemplo-teste.com.br", senhaBruno);
 await page.getByRole("heading", { name: "Olá, Bruno" }).waitFor();
 await page.locator(".atalho.saida").waitFor();
 await page.locator("#bmenu").click();
 assert.equal(await page.getByRole("button", { name: /Acessos/ }).count(), 0);
+assert.equal(await page.locator("dialog[open] nav.menu").getByRole("button", { name: "Vistoria", exact: true }).count(), 0);
 await page.locator("dialog[open] .fechar").click();
 await page.locator(".mov").first().click();
 await page.locator("dialog[open] .ficha").waitFor();
 assert.equal(await page.getByRole("button", { name: "Cancelar este registro" }).count(), 0);
+assert.equal(await page.getByRole("button", { name: "Apagar de vez" }).count(), 0);
 await page.locator("dialog[open] .fechar").click();
 await page.locator("#bmenu").click();
 await page.getByRole("button", { name: "Frotas" }).click();
@@ -422,13 +529,12 @@ await page.goto(`${SITE}#/saida`);
 await page.getByLabel("Frota", { exact: true }).fill("C-9");
 assert.equal(await page.locator(".opcao.nova", { hasText: "Cadastrar frota" }).count(), 0);
 await page.locator('#abas a[data-rota=""]').click();
-passo("operador registra, mas não vê Acessos, não cancela e não cadastra frota");
+passo("operador registra, mas não vê Acessos nem Vistoria, não cancela, não apaga e não cadastra frota");
 
 // ── consulta ──
 await sairPeloMenu(page);
-criarUsuario(db, { email: "dora@exemplo-teste.com.br", senha: "senha-dora-1", nome: "Dora Consulta", papel: "consulta" });
-await entrar(page, "dora@exemplo-teste.com.br", "senha-dora-1");
-await page.getByRole("heading", { name: "Olá, Dora" }).waitFor();
+await entrar(page, "eva.antiga@exemplo-teste.com.br", senhaEva);
+await page.getByRole("heading", { name: "Olá, Eva" }).waitFor();
 assert.equal(await page.locator(".atalho").count(), 0);
 await semRolagemLateral(page, "início da consulta");
 assert.equal(await page.locator('#abas a[data-rota="saida"]').count(), 0);
@@ -447,8 +553,14 @@ passo("sem internet o site abre com a última cópia do aparelho");
 await ctx.setOffline(false);
 db.falhar = null;
 
+const moldura = await ctx.newPage();
+await moldura.setContent(`<iframe src="${SITE}" width="400" height="300"></iframe>`);
+await moldura.frameLocator("iframe").getByText("Abra a Sala de Aplicação Direta direto no navegador.").waitFor();
+await moldura.close();
+passo("dentro de outro site (moldura) o site não abre");
+
 assert.deepEqual(erros, [], erros.join("\n"));
-passo("nenhum erro de JavaScript nem de CSP no console");
+passo("nenhum erro de JavaScript, de CSP nem de Trusted Types no console");
 await ctx.close();
 
 // ════════════════════════ tablet ════════════════════════
@@ -461,7 +573,7 @@ vigiar(pt, errosTab);
 await pt.goto(SITE);
 await entrar(pt, "ana.admin@exemplo-teste.com.br", "senha-admin-1");
 await pt.getByRole("heading", { name: "Olá, Ana" }).waitFor();
-await pt.waitForFunction(() => [...document.querySelectorAll(".mini img")].length === 3 &&
+await pt.waitForFunction(() => [...document.querySelectorAll(".mini img")].length >= 2 &&
   [...document.querySelectorAll(".mini img")].every((i) => i.complete && i.naturalWidth > 0));
 await semRolagemLateral(pt, "tablet início");
 await tela(pt, "10-tablet-inicio");
