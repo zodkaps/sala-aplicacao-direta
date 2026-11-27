@@ -7,14 +7,20 @@
 --
 -- Como a parede funciona: a chave do site é pública (fica no navegador), então
 -- quem protege os dados é o Postgres. Toda tabela tem RLS; o que não tem
--- política é negado. Ninguém apaga nem edita uma movimentação: o administrador
--- CANCELA, com motivo, e o registro fica (sai só da conta do saldo).
+-- política é negado. Ninguém edita uma movimentação: o administrador CANCELA,
+-- com motivo, e o registro fica (sai só da conta do saldo) — ou, para registro
+-- de teste ou engano, APAGA de vez; o que é apagado fica copiado em `apagados`.
+-- A VISTORIA (tipo 'ajuste') acerta o saldo pelo que foi contado na sala, sem
+-- ser entrada nem saída.
 --
 -- Papéis (tabela `perfis`, que o site só altera pela função `definir_acesso`):
 --   pendente  conta criada, esperando o administrador liberar — não vê nada
---   consulta  vê o estoque, o histórico e as fotos
+--   consulta  vê o estoque, o histórico e as fotos (ex.: supervisores)
 --   operador  vê tudo e registra entradas e saídas, cadastra pessoa e material
---   admin     tudo isso, e edita cadastros, cancela registros e libera acessos
+--   admin     tudo isso, e faz a vistoria, edita e apaga cadastros, cancela e
+--             apaga registros, cria e libera acessos
+-- Ninguém além do administrador vê a lista de contas: o nome de quem registrou
+-- chega ao histórico por `privado.nome_do_perfil`, sem e-mail nem papel.
 
 -- ── o esquema das funções de apoio ─────────────────────────────────────────
 -- Fora do `public` para não virarem endpoint da API: só as políticas as chamam.
@@ -108,6 +114,9 @@ alter table public.materiais add column if not exists referencia text
   check (referencia is null or length(referencia) <= 60);
 create index if not exists materiais_referencia on public.materiais (lower(btrim(referencia)))
   where referencia is not null;
+-- A foto de referência do material (27/11/2026), para reconhecer na retirada.
+alter table public.materiais add column if not exists foto text
+  check (foto is null or foto ~ '^[0-9]{4}/[0-9]{2}/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jpg$');
 create unique index if not exists materiais_descricao_unica
   on public.materiais (lower(btrim(descricao)));
 create unique index if not exists materiais_codigo_unico
@@ -149,13 +158,13 @@ create trigger normalizar_frota before insert or update on public.frotas
 -- A foto é o caminho no bucket `fotos`; a miniatura mora ao lado, com "-p".
 create table if not exists public.movimentacoes (
   id             bigint generated always as identity primary key,
-  tipo           text not null check (tipo in ('entrada', 'saida')),
+  tipo           text not null,
   material_id    bigint not null references public.materiais (id),
-  quantidade     numeric(12, 3) not null check (quantidade > 0 and quantidade < 1000000),
-  foto           text not null unique
+  quantidade     numeric(12, 3) not null,
+  foto           text unique
                  check (foto ~ '^[0-9]{4}/[0-9]{2}/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jpg$'),
   retirante_id   bigint references public.pessoas (id),
-  responsavel_id bigint not null references public.pessoas (id),
+  responsavel_id bigint references public.pessoas (id),
   entregue_por   text check (entregue_por is null or length(entregue_por) <= 80),
   documento      text check (documento is null or length(documento) <= 40),
   destino        text check (destino is null or length(destino) <= 80),
@@ -179,6 +188,37 @@ do $$ begin
   end if;
 end $$;
 create index if not exists mov_frota on public.movimentacoes (frota_id, registrado_em desc);
+
+-- A vistoria (27/11/2026): tipo 'ajuste', com o que foi contado e o saldo que o
+-- sistema tinha; a quantidade é a diferença (pode ser negativa ou zero, quando
+-- confere). Não tem foto, pessoa nem frota.
+alter table public.movimentacoes add column if not exists contado numeric(12, 3)
+  check (contado is null or (contado >= 0 and contado < 1000000));
+alter table public.movimentacoes add column if not exists saldo_antes numeric(12, 3);
+alter table public.movimentacoes alter column foto drop not null;
+alter table public.movimentacoes alter column responsavel_id drop not null;
+alter table public.movimentacoes drop constraint if exists movimentacoes_tipo_check;
+alter table public.movimentacoes add constraint movimentacoes_tipo_check
+  check (tipo in ('entrada', 'saida', 'ajuste'));
+alter table public.movimentacoes drop constraint if exists movimentacoes_quantidade_check;
+alter table public.movimentacoes add constraint movimentacoes_quantidade_check
+  check (abs(quantidade) < 1000000 and (tipo = 'ajuste' or quantidade > 0));
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'mov_foto_obrigatoria') then
+    alter table public.movimentacoes add constraint mov_foto_obrigatoria check (tipo = 'ajuste' or foto is not null);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'mov_responsavel_obrigatorio') then
+    alter table public.movimentacoes add constraint mov_responsavel_obrigatorio check (tipo = 'ajuste' or responsavel_id is not null);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'ajuste_completo') then
+    alter table public.movimentacoes add constraint ajuste_completo
+      check ((tipo = 'ajuste') = (contado is not null and saldo_antes is not null));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'ajuste_sem_pessoas') then
+    alter table public.movimentacoes add constraint ajuste_sem_pessoas
+      check (tipo <> 'ajuste' or (retirante_id is null and frota_id is null and foto is null));
+  end if;
+end $$;
 create index if not exists mov_quando on public.movimentacoes (registrado_em desc);
 create index if not exists mov_material on public.movimentacoes (material_id, registrado_em desc);
 create index if not exists mov_retirante on public.movimentacoes (retirante_id);
@@ -187,11 +227,13 @@ create index if not exists mov_registrado_por on public.movimentacoes (registrad
 create index if not exists mov_cancelada_por on public.movimentacoes (cancelada_por);
 alter table public.movimentacoes enable row level security;
 
--- O que o navegador não decide: quem registrou, quando, e que a foto chegou.
+-- O que o navegador não decide: quem registrou, quando, que a foto chegou e,
+-- na vistoria, quanto o sistema tinha (lido aqui, com trava por material).
 create or replace function privado.antes_de_registrar() returns trigger
 language plpgsql security definer set search_path = '' as $$
 declare
   v_uid uuid := auth.uid();
+  v_saldo numeric;
 begin
   -- O gatilho roda antes da política; sem isto, quem só consulta ouviria que
   -- "a foto não chegou" em vez de que o acesso dele não registra.
@@ -211,7 +253,36 @@ begin
   if not exists (select 1 from public.materiais m where m.id = new.material_id and m.ativo) then
     raise exception 'Esse material está desativado no cadastro.' using errcode = 'P0001';
   end if;
-  if not exists (select 1 from public.pessoas p where p.id = new.responsavel_id and p.ativo) then
+
+  if new.tipo = 'ajuste' then
+    -- Vistoria: o saldo passa a ser o que foi contado; a diferença fica registrada.
+    if v_uid is not null and not privado.eh_admin() then
+      raise exception 'Só o administrador faz a vistoria do estoque.' using errcode = '42501';
+    end if;
+    if new.contado is null or new.contado < 0 then
+      raise exception 'Informe a quantidade contada.' using errcode = 'P0001';
+    end if;
+    perform pg_advisory_xact_lock(new.material_id);
+    select coalesce(sum(case mv.tipo when 'saida' then -mv.quantidade else mv.quantidade end), 0)
+      into v_saldo
+      from public.movimentacoes mv
+     where mv.material_id = new.material_id and mv.cancelada_em is null;
+    new.saldo_antes := v_saldo;
+    new.quantidade := new.contado - v_saldo;
+    new.foto := null;
+    new.retirante_id := null;
+    new.frota_id := null;
+    new.responsavel_id := null;
+    new.entregue_por := null;
+    new.documento := null;
+    new.destino := null;
+    return new;
+  end if;
+
+  new.contado := null;
+  new.saldo_antes := null;
+  if new.responsavel_id is null or
+     not exists (select 1 from public.pessoas p where p.id = new.responsavel_id and p.ativo) then
     raise exception 'A pessoa que acompanhou (ou recebeu) está desativada no cadastro.' using errcode = 'P0001';
   end if;
   if new.retirante_id is not null and
@@ -238,13 +309,24 @@ create trigger antes_de_registrar before insert on public.movimentacoes
 
 -- ── o que se lê junto ──────────────────────────────────────────────────────
 -- `security_invoker`: a vista obedece às políticas de quem lê.
+-- O nome de quem registrou chega pelo histórico sem abrir a tabela de contas.
+create or replace function privado.nome_do_perfil(p_id uuid) returns text
+language sql stable security definer set search_path = '' as $$
+  select p.nome from public.perfis p where p.id = p_id
+$$;
+revoke all on function privado.nome_do_perfil(uuid) from public;
+grant execute on function privado.nome_do_perfil(uuid) to authenticated;
+
+-- As colunas novas vão sempre no fim: create or replace view só acrescenta.
 create or replace view public.estoque with (security_invoker = true) as
 select m.id, m.codigo, m.descricao, m.unidade, m.minimo, m.local, m.ativo,
-       coalesce(sum(case mv.tipo when 'entrada' then mv.quantidade else -mv.quantidade end)
+       coalesce(sum(case mv.tipo when 'saida' then -mv.quantidade else mv.quantidade end)
                 filter (where mv.cancelada_em is null), 0)::numeric(12, 3) as saldo,
        count(mv.id) filter (where mv.cancelada_em is null) as movimentos,
        max(mv.registrado_em) filter (where mv.cancelada_em is null) as ultima,
-       m.referencia  -- as colunas novas vão no fim: create or replace view só acrescenta
+       m.referencia,
+       m.foto,
+       max(mv.registrado_em) filter (where mv.cancelada_em is null and mv.tipo = 'ajuste') as ultima_vistoria
   from public.materiais m
   left join public.movimentacoes mv on mv.material_id = m.id
  group by m.id;
@@ -255,15 +337,14 @@ select mv.id, mv.tipo, mv.quantidade, mv.foto, mv.registrado_em,
        mv.retirante_id, r.nome as retirante, r.matricula as retirante_matricula,
        mv.responsavel_id, a.nome as responsavel,
        mv.entregue_por, mv.documento, mv.destino, mv.obs,
-       mv.registrado_por, p.nome as registrado_por_nome,
-       mv.cancelada_em, c.nome as cancelada_por_nome, mv.motivo_cancelamento,
-       m.referencia, mv.frota_id, f.numero as frota, f.descricao as frota_descricao
+       mv.registrado_por, privado.nome_do_perfil(mv.registrado_por) as registrado_por_nome,
+       mv.cancelada_em, privado.nome_do_perfil(mv.cancelada_por) as cancelada_por_nome, mv.motivo_cancelamento,
+       m.referencia, mv.frota_id, f.numero as frota, f.descricao as frota_descricao,
+       mv.saldo_antes, mv.contado, m.foto as material_foto
   from public.movimentacoes mv
   join public.materiais m on m.id = mv.material_id
-  join public.pessoas a on a.id = mv.responsavel_id
+  left join public.pessoas a on a.id = mv.responsavel_id
   left join public.pessoas r on r.id = mv.retirante_id
-  left join public.perfis p on p.id = mv.registrado_por
-  left join public.perfis c on c.id = mv.cancelada_por
   left join public.frotas f on f.id = mv.frota_id;
 
 -- ── quem pode o quê ────────────────────────────────────────────────────────
@@ -277,16 +358,19 @@ grant select on public.pessoas, public.materiais, public.movimentacoes, public.f
   public.estoque, public.historico to authenticated;
 grant insert (nome, matricula, funcao) on public.pessoas to authenticated;
 grant update (nome, matricula, funcao, ativo) on public.pessoas to authenticated;
-grant insert (codigo, referencia, descricao, unidade, minimo, local) on public.materiais to authenticated;
-grant update (codigo, referencia, descricao, unidade, minimo, local, ativo) on public.materiais to authenticated;
+grant insert (codigo, referencia, descricao, unidade, minimo, local, foto) on public.materiais to authenticated;
+grant update (codigo, referencia, descricao, unidade, minimo, local, ativo, foto) on public.materiais to authenticated;
 grant insert (numero, descricao, placa) on public.frotas to authenticated;
 grant update (numero, descricao, placa, ativo) on public.frotas to authenticated;
 grant insert (tipo, material_id, quantidade, foto, retirante_id, responsavel_id, frota_id,
-  entregue_por, documento, destino, obs) on public.movimentacoes to authenticated;
+  entregue_por, documento, destino, obs, contado) on public.movimentacoes to authenticated;
+-- Apagar cadastro: só o administrador (política abaixo), e só o que não tem
+-- movimentação (a chave estrangeira recusa). Movimentação se apaga pela função.
+grant delete on public.materiais, public.pessoas, public.frotas to authenticated;
 
 drop policy if exists perfis_ler on public.perfis;
 create policy perfis_ler on public.perfis for select to authenticated
-  using (id = (select auth.uid()) or (select privado.pode_ver()));
+  using (id = (select auth.uid()) or (select privado.eh_admin()));
 
 drop policy if exists pessoas_ler on public.pessoas;
 create policy pessoas_ler on public.pessoas for select to authenticated
@@ -323,8 +407,16 @@ create policy mov_ler on public.movimentacoes for select to authenticated
   using ((select privado.pode_ver()));
 drop policy if exists mov_inserir on public.movimentacoes;
 create policy mov_inserir on public.movimentacoes for insert to authenticated
-  with check ((select privado.pode_registrar()));
--- Sem política de update e de delete: ninguém edita nem apaga pela API.
+  with check ((select privado.pode_registrar()) and (tipo <> 'ajuste' or (select privado.eh_admin())));
+-- Sem política de update e de delete: ninguém edita pela API, e apagar é só
+-- pela função apagar_movimentacao (administrador).
+
+drop policy if exists materiais_apagar on public.materiais;
+create policy materiais_apagar on public.materiais for delete to authenticated using ((select privado.eh_admin()));
+drop policy if exists pessoas_apagar on public.pessoas;
+create policy pessoas_apagar on public.pessoas for delete to authenticated using ((select privado.eh_admin()));
+drop policy if exists frotas_apagar on public.frotas;
+create policy frotas_apagar on public.frotas for delete to authenticated using ((select privado.eh_admin()));
 
 -- ── as ações do administrador ──────────────────────────────────────────────
 create or replace function public.cancelar_movimentacao(p_id bigint, p_motivo text)
@@ -387,14 +479,75 @@ begin
   end if;
 end $$;
 
+-- Apagar de vez (registro de teste ou engano). O que sai fica copiado em
+-- `apagados` (só o administrador lê), com quem apagou, quando e por quê.
+create table if not exists public.apagados (
+  id          bigint generated always as identity primary key,
+  tabela      text not null,
+  dados       jsonb not null,
+  motivo      text,
+  apagado_por uuid,
+  apagado_em  timestamptz not null default now()
+);
+alter table public.apagados enable row level security;
+revoke all on public.apagados from anon, authenticated;
+grant select on public.apagados to authenticated;
+drop policy if exists apagados_ler on public.apagados;
+create policy apagados_ler on public.apagados for select to authenticated
+  using ((select privado.eh_admin()));
+
+create or replace function privado.guardar_apagado() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  insert into public.apagados (tabela, dados, motivo, apagado_por)
+  values (tg_table_name, to_jsonb(old), nullif(current_setting('sad.motivo', true), ''), auth.uid());
+  return old;
+end $$;
+revoke all on function privado.guardar_apagado() from public;
+
+drop trigger if exists guardar_apagado on public.movimentacoes;
+create trigger guardar_apagado after delete on public.movimentacoes
+  for each row execute function privado.guardar_apagado();
+drop trigger if exists guardar_apagado on public.materiais;
+create trigger guardar_apagado after delete on public.materiais
+  for each row execute function privado.guardar_apagado();
+drop trigger if exists guardar_apagado on public.pessoas;
+create trigger guardar_apagado after delete on public.pessoas
+  for each row execute function privado.guardar_apagado();
+drop trigger if exists guardar_apagado on public.frotas;
+create trigger guardar_apagado after delete on public.frotas
+  for each row execute function privado.guardar_apagado();
+
+-- Devolve o caminho da foto, para o site apagar o arquivo depois.
+create or replace function public.apagar_movimentacao(p_id bigint, p_motivo text)
+returns text language plpgsql security definer set search_path = '' as $$
+declare
+  v_foto text;
+begin
+  if not privado.eh_admin() then
+    raise exception 'Só o administrador apaga um registro.' using errcode = '42501';
+  end if;
+  if length(btrim(coalesce(p_motivo, ''))) < 3 then
+    raise exception 'Escreva por que está apagando (ex.: teste).' using errcode = 'P0001';
+  end if;
+  perform set_config('sad.motivo', left(btrim(p_motivo), 300), true);
+  delete from public.movimentacoes where id = p_id returning foto into v_foto;
+  if not found then
+    raise exception 'Registro não encontrado.' using errcode = 'P0001';
+  end if;
+  perform set_config('sad.motivo', '', true);
+  return v_foto;
+end $$;
+
 revoke all on function public.cancelar_movimentacao(bigint, text), public.listar_acessos(),
-  public.definir_acesso(uuid, text, text) from public, anon;
+  public.definir_acesso(uuid, text, text), public.apagar_movimentacao(bigint, text) from public, anon;
 grant execute on function public.cancelar_movimentacao(bigint, text), public.listar_acessos(),
-  public.definir_acesso(uuid, text, text) to authenticated;
+  public.definir_acesso(uuid, text, text), public.apagar_movimentacao(bigint, text) to authenticated;
 
 -- ── as fotos ───────────────────────────────────────────────────────────────
 -- Bucket privado: a foto só abre por endereço assinado, para quem pode ver.
--- Sem política de update e de delete: foto enviada não se troca nem se apaga.
+-- Sem política de update: foto enviada não se troca. Apagar, só o administrador
+-- (a foto de um registro apagado, ou a foto antiga de um material).
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('fotos', 'fotos', false, 3145728, array['image/jpeg'])
 on conflict (id) do update
@@ -410,6 +563,10 @@ create policy fotos_enviar on storage.objects for insert to authenticated
   with check (
     bucket_id = 'fotos' and (select privado.pode_registrar()) and
     name ~ '^[0-9]{4}/[0-9]{2}/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(-p)?\.jpg$');
+
+drop policy if exists fotos_apagar on storage.objects;
+create policy fotos_apagar on storage.objects for delete to authenticated
+  using (bucket_id = 'fotos' and (select privado.eh_admin()));
 
 -- ── o primeiro administrador ───────────────────────────────────────────────
 -- Nenhum e-mail mora neste arquivo (o repositório é público). Depois de criar a
