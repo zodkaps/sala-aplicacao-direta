@@ -33,7 +33,7 @@ Supabase (projeto "Sala de Aplicação Direta", `ogaaapaondalugvezdtd`). O
 
 Padrão Makro, o mesmo do painel de programação (`gestaomkt`): azul-marinho
 #13164E na estrutura, vermelho só para alerta — com uma exceção pedida pelo
-Mateus (26/11/2026): **entrada é verde e saída é vermelha** nos cards da lista,
+PCM (26/11/2026): **entrada é verde e saída é vermelha** nos cards da lista,
 nos botões grandes e na tela de registrar (`--entrada` e `--saida` no CSS); Metropolis nos títulos e
 Nunito no texto, cinza como base e a situação num ponto colorido. Claro por
 padrão, escuro no ◐. Cor nova vai como variável no `:root` do `css/app.css`.

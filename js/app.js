@@ -266,8 +266,22 @@ document.addEventListener("visibilitychange", () => {
 
 supa.quandoSessaoCair((motivo) => { D.esquecerTudo(); if (motivo) mostrarEntrar(motivo); });
 
-if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
-  navigator.serviceWorker.register("sw.js").catch(() => {});
-}
+// Trusted Types: o navegador recusa transformar texto em código ou em script.
+// A única exceção é o service worker, e só com este nome exato.
+const politica = window.trustedTypes && window.trustedTypes.createPolicy
+  ? window.trustedTypes.createPolicy("sad", {
+    createScriptURL: (u) => { if (u === "sw.js") return u; throw new TypeError("Endereço de script recusado."); },
+  })
+  : null;
 
-if (supa.logado()) abrirSessao(); else mostrarEntrar();
+// Dentro de outro site (moldura), não abre: evita o golpe do clique disfarçado.
+const emMoldura = (() => { try { return window.top !== window.self; } catch { return true; } })();
+
+if (emMoldura) {
+  document.body.replaceChildren(el("p", { class: "nada" }, "Abra a Sala de Aplicação Direta direto no navegador."));
+} else {
+  if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
+    navigator.serviceWorker.register(politica ? politica.createScriptURL("sw.js") : "sw.js").catch(() => {});
+  }
+  if (supa.logado()) abrirSessao(); else mostrarEntrar();
+}

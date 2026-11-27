@@ -360,6 +360,27 @@ teste("index.html: CSP fechada e nenhum script embutido", () => {
   assert.ok(!/ on[a-z]+="/.test(h), "atributo on…= no HTML");
 });
 
+teste("Trusted Types ligado, sem referrer, e nada no código que interprete HTML", () => {
+  const h = readFileSync(join(RAIZ, "index.html"), "utf8");
+  const csp = h.match(/Content-Security-Policy" content="([^"]+)"/)[1];
+  assert.ok(csp.includes("require-trusted-types-for 'script'") && csp.includes("trusted-types sad"), csp);
+  assert.ok(h.includes('<meta name="referrer" content="no-referrer">'));
+  for (const f of arquivos(join(RAIZ, "js"))) {
+    const s = readFileSync(f, "utf8");
+    assert.ok(!/DOMParser|parseFromString|createContextualFragment|srcdoc|setTimeout\(\s*["'`]/.test(s), relative(RAIZ, f));
+  }
+});
+
+teste("nenhum e-mail de verdade no repositório (ele é público; nome da equipe também não entra)", () => {
+  const proibidos = /@(gmail|hotmail|outlook|yahoo|live|icloud|bol|uol|terra|makro)\./i;
+  const pastas = ["js", "css", "sql", "testes", "supabase"].flatMap((d) => arquivos(join(RAIZ, d)));
+  for (const f of [...pastas, ...["README.md", "CLAUDE.md", "index.html", "sw.js"].map((x) => join(RAIZ, x))]) {
+    if (!existsSync(f)) continue;
+    const m = readFileSync(f, "utf8").match(proibidos);
+    assert.ok(!m, `${relative(RAIZ, f)}: "${m && m[0]}"`);
+  }
+});
+
 teste("a chave do config.js é a publicável (nunca a secreta)", () => {
   const c = readFileSync(join(RAIZ, "js/config.js"), "utf8");
   assert.ok(/chave: "sb_publishable_[A-Za-z0-9_-]+"/.test(c));

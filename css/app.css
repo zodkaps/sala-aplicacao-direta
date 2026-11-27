@@ -45,7 +45,7 @@
   --alerta: var(--vermelho-makro);  --alerta-fundo: #fbe9e9;
   --aviso: #a1700a;                 --aviso-fundo: #fdf3dc;
   --ok: #0ca30c;                    --ok-fundo: #e4f5e4;
-  /* entrada verde e saída vermelha (pedido do Mateus, 26/11/2026): os cards,
+  /* entrada verde e saída vermelha (pedido do PCM, 26/11/2026): os cards,
      os botões e a tela de registrar de cada uma levam a cor dela */
   --saida: #D4001F;        --saida-fundo: #fdeef0;    --saida-borda: #f5c5cc;
   --entrada: #12823B;      --entrada-fundo: #eaf6ee;  --entrada-borda: #bfe2cb;
