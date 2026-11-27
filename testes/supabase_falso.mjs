@@ -17,6 +17,7 @@ export function criarBanco() {
     materiais: [],
     frotas: [],
     movimentacoes: [],
+    apagados: [],          // a cópia do que o administrador apagou
     objetos: new Map(),  // caminho -> { bytes, dono, tipo }
     tokens: new Map(),   // token -> id do usuário
     seq: { pessoas: 0, materiais: 0, frotas: 0, movimentacoes: 0, token: 0 },
@@ -54,12 +55,14 @@ const podeRegistrar = (p) => ["operador", "admin"].includes(p);
 function estoque(db) {
   return db.materiais.map((m) => {
     const movs = db.movimentacoes.filter((x) => x.material_id === m.id && !x.cancelada_em);
-    const saldo = movs.reduce((s, x) => s + (x.tipo === "entrada" ? x.quantidade : -x.quantidade), 0);
+    const saldo = movs.reduce((s, x) => s + (x.tipo === "saida" ? -x.quantidade : x.quantidade), 0);
+    const vistorias = movs.filter((x) => x.tipo === "ajuste");
     return {
       id: m.id, codigo: m.codigo, descricao: m.descricao, unidade: m.unidade, minimo: m.minimo, local: m.local,
       ativo: m.ativo, saldo: Math.round(saldo * 1000) / 1000, movimentos: movs.length,
       ultima: movs.length ? movs[movs.length - 1].registrado_em : null,
-      referencia: m.referencia ?? null,
+      referencia: m.referencia ?? null, foto: m.foto ?? null,
+      ultima_vistoria: vistorias.length ? vistorias[vistorias.length - 1].registrado_em : null,
     };
   });
 }
@@ -81,6 +84,7 @@ function historico(db) {
       motivo_cancelamento: mv.motivo_cancelamento,
       referencia: m.referencia ?? null, frota_id: mv.frota_id ?? null,
       frota: f ? f.numero : null, frota_descricao: f ? f.descricao : null,
+      saldo_antes: mv.saldo_antes ?? null, contado: mv.contado ?? null, material_foto: m.foto ?? null,
     };
   });
 }
@@ -156,6 +160,34 @@ function aplicar(linhas, params) {
   return out.slice(off, off + lim);
 }
 
+/** O cliente de administrador do Supabase, imitado sobre este banco, para a
+ *  lógica da função `acessos` (a mesma que está publicada) rodar no teste. */
+function adminDoBanco(db) {
+  return {
+    auth: {
+      admin: {
+        async createUser({ email, password, user_metadata }) {
+          if (db.usuarios.some((u) => u.email === email)) return { data: null, error: { status: 422, message: "A user with this email address has already been registered" } };
+          const id = criarUsuario(db, { email, senha: password, nome: user_metadata.nome });
+          return { data: { user: { id } }, error: null };
+        },
+        async updateUserById(id, { password }) {
+          const u = db.usuarios.find((x) => x.id === id);
+          if (!u) return { data: null, error: { message: "User not found" } };
+          u.senha = password;
+          return { data: {}, error: null };
+        },
+      },
+    },
+    from() {
+      return {
+        update: (campos) => ({ eq: async (_c, id) => { const p = db.perfis.find((x) => x.id === id); if (p) Object.assign(p, campos); return { error: null }; } }),
+        select: () => ({ eq: (_c, id) => ({ maybeSingle: async () => ({ data: db.perfis.some((x) => x.id === id) ? { id } : null, error: null }) }) }),
+      };
+    },
+  };
+}
+
 // ── o tratador ─────────────────────────────────────────────────────────────
 
 function json(route, status, corpo) {
@@ -213,12 +245,26 @@ export async function instalar(context, base, db) {
     const papel = papelDe(db, eu);
     if (caminho === "/auth/v1/user") return json(route, 200, { id: eu });
 
+    // ── a função `acessos` ──
+    if (caminho === "/functions/v1/acessos") {
+      if (papel !== "admin") return json(route, 403, { erro: "Só o administrador cria acessos e troca senhas." });
+      const { tratar } = await import("../supabase/functions/acessos/logica.js");
+      const r = await tratar(texto(), adminDoBanco(db));
+      return json(route, r.status, r.corpo);
+    }
+
     // ── Storage ──
     if (caminho === "/storage/v1/object/sign/fotos") {
       corpo = texto();
       return json(route, 200, corpo.paths.map((p) => (podeVer(papel) && db.objetos.has(p)
         ? { path: p, signedURL: `/object/sign/fotos/${p}?token=ok`, error: null }
         : { path: p, signedURL: null, error: "Either the object does not exist or you do not have access to it" })));
+    }
+    if (caminho === "/storage/v1/object/fotos" && metodo === "DELETE") {
+      corpo = texto();
+      if (papel !== "admin") return json(route, 200, []);  // a política filtra: nada some
+      const foram = corpo.prefixes.filter((c) => db.objetos.delete(c)).map((name) => ({ name }));
+      return json(route, 200, foram);
     }
     if (caminho.startsWith("/storage/v1/object/fotos/") && metodo === "POST") {
       const c = decodeURIComponent(caminho.replace("/storage/v1/object/fotos/", ""));
@@ -239,7 +285,15 @@ export async function instalar(context, base, db) {
     if (alvo.startsWith("rpc/")) {
       corpo = texto() || {};
       const nome = alvo.slice(4);
-      if (papel !== "admin") return json(route, 403, { code: "42501", message: `Só o administrador ${nome === "cancelar_movimentacao" ? "cancela um registro" : "libera acessos"}.` });
+      if (papel !== "admin") return json(route, 403, { code: "42501", message: `Só o administrador ${nome === "cancelar_movimentacao" ? "cancela um registro" : nome === "apagar_movimentacao" ? "apaga um registro" : "libera acessos"}.` });
+      if (nome === "apagar_movimentacao") {
+        if (String(corpo.p_motivo || "").trim().length < 3) return json(route, 400, { code: "P0001", message: "Escreva por que está apagando (ex.: teste)." });
+        const i = db.movimentacoes.findIndex((x) => x.id === corpo.p_id);
+        if (i < 0) return json(route, 400, { code: "P0001", message: "Registro não encontrado." });
+        const [mv] = db.movimentacoes.splice(i, 1);
+        db.apagados.push({ tabela: "movimentacoes", dados: mv, motivo: corpo.p_motivo, apagado_por: eu });
+        return json(route, 200, mv.foto);
+      }
       if (nome === "listar_acessos") {
         return json(route, 200, db.perfis.map((p) => ({ id: p.id, email: p.email, nome: p.nome, papel: p.papel, criado_em: p.criado_em, ultimo_acesso: null }))
           .sort((a, b) => (b.papel === "pendente") - (a.papel === "pendente") || a.nome.localeCompare(b.nome)));
@@ -262,7 +316,7 @@ export async function instalar(context, base, db) {
     }
 
     const tabelas = {
-      perfis: () => db.perfis.filter((p) => p.id === eu || podeVer(papel)).map(({ id, nome, papel: pp }) => ({ id, nome, papel: pp })),
+      perfis: () => db.perfis.filter((p) => p.id === eu || papel === "admin").map(({ id, nome, papel: pp }) => ({ id, nome, papel: pp })),
       pessoas: () => (podeVer(papel) ? db.pessoas : []),
       materiais: () => (podeVer(papel) ? db.materiais : []),
       frotas: () => (podeVer(papel) ? db.frotas : []),
@@ -308,14 +362,28 @@ export async function instalar(context, base, db) {
         if (db.materiais.some((m) => m.descricao.toLowerCase() === corpo.descricao.toLowerCase())) {
           return json(route, 409, { code: "23505", message: 'duplicate key value violates unique constraint "materiais_descricao_unica"' });
         }
-        const linha = { id: ++db.seq.materiais, codigo: corpo.codigo, referencia: corpo.referencia ?? null, descricao: corpo.descricao, unidade: corpo.unidade, minimo: corpo.minimo || 0, local: corpo.local, ativo: true, criado_em: agora, criado_por: eu };
+        if (corpo.foto != null && !RE_FOTO_MOV.test(corpo.foto)) return json(route, 400, { code: "23514", message: "violates check constraint materiais_foto_check" });
+        const linha = { id: ++db.seq.materiais, codigo: corpo.codigo, referencia: corpo.referencia ?? null, foto: corpo.foto ?? null, descricao: corpo.descricao, unidade: corpo.unidade, minimo: corpo.minimo || 0, local: corpo.local, ativo: true, criado_em: agora, criado_por: eu };
         db.materiais.push(linha);
         return json(route, 201, [linha]);
       }
       if (alvo === "movimentacoes") {
-        const permitidas = ["tipo", "material_id", "quantidade", "foto", "retirante_id", "responsavel_id", "frota_id", "entregue_por", "documento", "destino", "obs"];
+        const permitidas = ["tipo", "material_id", "quantidade", "foto", "retirante_id", "responsavel_id", "frota_id", "entregue_por", "documento", "destino", "obs", "contado"];
         const sobra = Object.keys(corpo).filter((k) => !permitidas.includes(k));
         if (sobra.length) return json(route, 403, { code: "42501", message: `permission denied for table movimentacoes (${sobra})` });
+        if (corpo.tipo === "ajuste") {
+          if (papel !== "admin") return json(route, 403, { code: "42501", message: "Só o administrador faz a vistoria do estoque." });
+          if (!(corpo.contado >= 0)) return json(route, 400, { code: "P0001", message: "Informe a quantidade contada." });
+          const saldoAntes = estoque(db).find((x) => x.id === corpo.material_id).saldo;
+          const linha = {
+            id: ++db.seq.movimentacoes, tipo: "ajuste", material_id: corpo.material_id,
+            quantidade: Math.round((corpo.contado - saldoAntes) * 1000) / 1000, contado: corpo.contado, saldo_antes: saldoAntes,
+            foto: null, retirante_id: null, responsavel_id: null, frota_id: null, entregue_por: null, documento: null, destino: null,
+            obs: corpo.obs ?? null, registrado_por: eu, registrado_em: agora, cancelada_em: null, cancelada_por: null, motivo_cancelamento: null,
+          };
+          db.movimentacoes.push(linha);
+          return json(route, 201, [{ id: linha.id, quantidade: linha.quantidade, saldo_antes: linha.saldo_antes, contado: linha.contado }]);
+        }
         const o = db.objetos.get(corpo.foto);
         if (!RE_FOTO_MOV.test(corpo.foto || "")) return json(route, 400, { code: "23514", message: "violates check constraint movimentacoes_foto_check" });
         if (!o || o.dono !== eu) return json(route, 400, { code: "P0001", message: "A foto não chegou ao servidor. Tire a foto de novo e registre." });
@@ -342,6 +410,20 @@ export async function instalar(context, base, db) {
       if (papel !== "admin") return json(route, 200, []); // a política filtra: nenhuma linha
       const alvos = aplicar(lista, params);
       for (const l of alvos) Object.assign(l, corpo);
+      return json(route, 200, alvos);
+    }
+
+    if (metodo === "DELETE") {
+      const lista = { pessoas: db.pessoas, materiais: db.materiais, frotas: db.frotas }[alvo] || null;
+      if (!lista) return json(route, 403, { code: "42501", message: `permission denied for table ${alvo}` });
+      if (papel !== "admin") return json(route, 200, []);
+      const alvos = aplicar(lista, params);
+      for (const l of alvos) {
+        const usado = db.movimentacoes.some((mv) => (alvo === "materiais" && mv.material_id === l.id) ||
+          (alvo === "pessoas" && (mv.retirante_id === l.id || mv.responsavel_id === l.id)) || (alvo === "frotas" && mv.frota_id === l.id));
+        if (usado) return json(route, 409, { code: "23503", message: `update or delete on table "${alvo}" violates foreign key constraint` });
+      }
+      for (const l of alvos) { lista.splice(lista.indexOf(l), 1); db.apagados.push({ tabela: alvo, dados: l, motivo: null, apagado_por: eu }); }
       return json(route, 200, alvos);
     }
 
