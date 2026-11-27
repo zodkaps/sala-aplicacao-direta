@@ -191,6 +191,11 @@ async function desenhar(forcar = false) {
 async function sair() {
   await supa.sair();
   D.esquecerTudo();
+  // Nada de quem usou fica no aparelho: nem o e-mail, nem as cópias, nem os
+  // "usados por último". Só a escolha de claro/escuro.
+  try {
+    for (const k of Object.keys(localStorage)) if (k.startsWith("sad.") && k !== GUARDA_TEMA) localStorage.removeItem(k);
+  } catch { /* segue */ }
   // Quem entrar depois começa pelo início, não na tela em que o outro parou.
   history.replaceState(null, "", location.pathname + location.search);
   mostrarEntrar();

@@ -10,7 +10,9 @@ const BASE = SUPABASE.url.replace(/\/+$/, "");
 const CHAVE = SUPABASE.chave;
 const GUARDA_SESSAO = "sad.sessao";
 const GUARDA_URLS = "sad.fotos";
-const VALIDADE_URL = 24 * 3600; // segundos que um endereço de foto vale
+// Segundos que um endereço de foto vale. Curto de propósito: um endereço que
+// vaze (print, histórico do navegador) para de abrir a foto em duas horas.
+const VALIDADE_URL = 2 * 3600;
 
 export class ErroBanco extends Error {
   constructor(mensagem, status = 0, codigo = "") {
@@ -110,6 +112,9 @@ export function traduzir(mensagem, codigo = "") {
   if (s.includes("materiais_codigo_unico")) return "Já existe um material com esse código.";
   if (s.includes("movimentacoes_foto_key")) return "Essa foto já foi usada em outro registro. Tire outra.";
   if (s.includes("frotas_numero_key")) return "Já existe uma frota com esse número.";
+  if (c === "23503" || s.includes("foreign key")) {
+    return "Esse cadastro tem movimentações e não pode ser apagado. Desative em vez de apagar (ou apague antes as movimentações dele).";
+  }
   if (s.includes("mime type") || s.includes("invalid_mime_type")) return "A foto precisa estar em JPEG.";
   if (s.includes("maximum allowed size") || s.includes("payload too large")) return "A foto ficou grande demais.";
   if (c === "23514" || s.includes("violates check constraint")) {
@@ -126,7 +131,7 @@ export function traduzir(mensagem, codigo = "") {
 
 async function erroDe(r) {
   const j = await r.json().catch(() => ({}));
-  const m = j.error_description || j.msg || j.message || j.error || `${r.status} ${r.statusText}`;
+  const m = j.erro || j.error_description || j.msg || j.message || j.error || `${r.status} ${r.statusText}`;
   const codigo = String(j.code || j.error_code || j.statusCode || "");
   return new ErroBanco(traduzir(m, codigo), r.status, codigo);
 }
@@ -149,15 +154,6 @@ export async function entrar(email, senha) {
   return eu();
 }
 
-/** Cria a conta. Com "Confirm email" desligado o Supabase já devolve a sessão;
- *  ligado, a conta espera — e liberar pelo site também a confirma. */
-export async function criarConta(email, senha, nome) {
-  const j = await auth("signup", {
-    email: String(email).trim().toLowerCase(), password: senha, data: { nome: String(nome).trim() },
-  });
-  if (j && j.access_token) { guardarSessao(j); return { entrou: true }; }
-  return { entrou: false };
-}
 
 let renovando = null;
 async function renovar() {
@@ -276,6 +272,24 @@ export async function inserirVarias(tabela, linhas, { conflito = "", ignorarRepe
   return r.json();
 }
 
+/** Apaga as linhas do filtro (o banco só deixa o administrador). */
+export async function apagar(tabela, filtro) {
+  const r = await pedir(`${BASE}/rest/v1/${tabela}?${filtro}`, {
+    method: "DELETE", headers: { Prefer: "return=representation" },
+  });
+  const j = await r.json();
+  if (!Array.isArray(j) || !j.length) throw new ErroBanco("O seu acesso não permite apagar esse cadastro.", 403, "42501");
+  return j[0];
+}
+
+/** Chama uma função do Supabase (ex.: "acessos") com a sessão de quem usa. */
+export async function funcao(nome, corpo) {
+  const r = await pedir(`${BASE}/functions/v1/${nome}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo),
+  });
+  return r.json();
+}
+
 /** Atualiza as linhas do filtro. Nenhuma linha alterada = o banco recusou. */
 export async function atualizar(tabela, filtro, campos) {
   const r = await pedir(`${BASE}/rest/v1/${tabela}?${filtro}`, {
@@ -313,6 +327,19 @@ export async function enviarFoto(caminho, blob) {
   }
 }
 
+/** Apaga arquivos de foto (só o administrador; o banco confere). Falhar aqui
+ *  não desfaz nada: no máximo sobra um arquivo sem uso no bucket. */
+export async function apagarFotos(caminhos) {
+  const lista = [...new Set(caminhos.filter(Boolean))];
+  if (!lista.length) return;
+  await pedir(`${BASE}/storage/v1/object/${BUCKET}`, {
+    method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prefixes: lista }),
+  });
+  const guardadas = lerGuardado(GUARDA_URLS) || {};
+  for (const c of lista) delete guardadas[c];
+  guardar(GUARDA_URLS, guardadas);
+}
+
 /** Endereços assinados das fotos, guardados por um dia neste aparelho: o mesmo
  *  endereço de novo faz o navegador usar a foto que já baixou. */
 export async function enderecosDasFotos(caminhos) {
@@ -330,7 +357,7 @@ export async function enderecosDasFotos(caminhos) {
     const lista = await r.json();
     for (const it of Array.isArray(lista) ? lista : []) {
       if (it && it.signedURL && !it.error) {
-        guardadas[it.path] = { u: `${BASE}/storage/v1${it.signedURL}`, ate: agora + (VALIDADE_URL - 3600) * 1000 };
+        guardadas[it.path] = { u: `${BASE}/storage/v1${it.signedURL}`, ate: agora + (VALIDADE_URL - 600) * 1000 };
       }
     }
   }

@@ -274,6 +274,20 @@ input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--marca); 
 .logo-linha h1 { margin: 0; font-size: 1.2rem; }
 .logo-linha small { color: var(--fraco); }
 
+.dica-entrar { color: var(--suave); font-size: .85rem; text-align: center; margin: 1rem 0 0; }
+
+/* ── acessos ─────────────────────────────────────────────────────────────── */
+
+.criar-acesso { margin-bottom: 1rem; }
+.linha-senha { display: flex; gap: .5rem; }
+.linha-senha input { flex: 1; min-width: 0; }
+.senha-provisoria { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important; letter-spacing: .04em; }
+.entrega {
+  margin: 0 0 1rem; padding: 1rem; border-radius: var(--raio);
+  background: var(--ok-fundo); border: 1px solid var(--ok); color: var(--texto);
+}
+.entrega .ficha { margin: .6rem 0; }
+
 /* ── início ──────────────────────────────────────────────────────────────── */
 
 .ola { margin-top: .2rem; }

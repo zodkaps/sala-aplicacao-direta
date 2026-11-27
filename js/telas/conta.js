@@ -3,21 +3,22 @@
 import { el, campoSenha, esconderSenhas, ocupar, aviso, confirmar } from "../ui.js";
 import * as supa from "../supa.js";
 import * as D from "../dados.js";
-import { PAPEIS } from "../texto.js";
+import { PAPEIS, senhaFraca } from "../texto.js";
 import { VERSAO } from "../config.js";
 import { titulo } from "./comum.js";
 
 export function telaConta(raiz, ctx) {
   const p = D.estado.perfil || {};
-  const nova = el("input", { type: "password", autocomplete: "new-password", minlength: 6 });
-  const repete = el("input", { type: "password", autocomplete: "new-password", minlength: 6 });
+  const nova = el("input", { type: "password", autocomplete: "new-password", minlength: 8, maxlength: 72 });
+  const repete = el("input", { type: "password", autocomplete: "new-password", minlength: 8, maxlength: 72 });
   const trocar = el("button", { type: "submit", class: "botao primario" }, "Trocar a senha");
   const erro = el("p", { class: "erro-campo", hidden: true });
 
   async function enviar(ev) {
     ev.preventDefault();
     erro.hidden = true;
-    if (nova.value.length < 6) { erro.textContent = "A senha precisa ter pelo menos 6 caracteres."; erro.hidden = false; return; }
+    const fraca = senhaFraca(nova.value);
+    if (fraca) { erro.textContent = fraca; erro.hidden = false; return; }
     if (nova.value !== repete.value) { erro.textContent = "As duas senhas não são iguais."; erro.hidden = false; return; }
     const soltar = ocupar(trocar, "Trocando…");
     try {
