@@ -84,7 +84,7 @@ bucket privado), não a tela: a chave que fica no site é pública por desenho.
 - `sql/01_esquema.sql` — tabelas, vistas, regras de acesso, funções do
   administrador e o bucket de fotos. Roda inteiro num projeto novo e pode rodar
   de novo.
-- `sql/90_testar_regras.sql` — testa as regras fingindo ser cada acesso (52
+- `sql/90_testar_regras.sql` — testa as regras fingindo ser cada acesso (69
   verificações) e **desfaz tudo** no fim: termina sempre com um erro de
   propósito, cuja mensagem diz "TUDO CERTO" ou o que falhou.
 

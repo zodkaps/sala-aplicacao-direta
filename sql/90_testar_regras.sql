@@ -24,6 +24,8 @@ declare
   m_graxa bigint;
   mv_sai  bigint;
   f_433   bigint;
+  m_filtro bigint;
+  p_sem_uso bigint;
   n       bigint;
   t       text;
   v       numeric;
@@ -65,7 +67,13 @@ begin
   insert into public.pessoas (nome, matricula) values ('T Mecânico', 'T1') returning id into p_mec;
   insert into public.pessoas (nome) values ('T Almoxarife') returning id into p_alm;
   insert into public.materiais (descricao, unidade, codigo, referencia) values ('T Graxa', 'KG', 'T900', 'REF-T 123') returning id into m_graxa;
+  insert into public.materiais (descricao, unidade, foto) values ('T Filtro', 'UN', pasta || gen_random_uuid() || '.jpg') returning id into m_filtro;
   ok := ok + 1;
+  begin
+    insert into public.materiais (descricao, unidade, foto) values ('T Ruim', 'UN', '../qualquer.jpg');
+    raise exception using errcode = 'TFAIL', message = 'FALHOU: foto de material com caminho estranho entrou';
+  exception when check_violation then ok := ok + 1;
+  end;
 
   insert into public.movimentacoes (tipo, material_id, quantidade, foto, responsavel_id, entregue_por)
   values ('entrada', m_graxa, 10, f_ent, p_alm, '  ');
@@ -187,6 +195,31 @@ begin
   exception when insufficient_privilege then ok := ok + 1;
   end;
 
+  -- a lista de contas não fica à mostra: o operador só vê a própria
+  select count(*) into n from public.perfis;
+  if n <> 1 then raise exception using errcode = 'TFAIL', message = 'FALHOU: operador vê ' || n || ' contas'; end if;
+  ok := ok + 1;
+
+  begin
+    insert into public.movimentacoes (tipo, material_id, quantidade, contado) values ('ajuste', m_graxa, 0, 50);
+    raise exception using errcode = 'TFAIL', message = 'FALHOU: operador fez vistoria';
+  exception when insufficient_privilege then ok := ok + 1;
+  end;
+  begin
+    insert into public.movimentacoes (tipo, material_id, quantidade, responsavel_id) values ('entrada', m_graxa, 1, p_alm);
+    raise exception using errcode = 'TFAIL', message = 'FALHOU: entrada sem foto entrou';
+  exception when sqlstate 'P0001' or check_violation then ok := ok + 1;
+  end;
+  begin
+    perform public.apagar_movimentacao(mv_sai, 'operador tentando');
+    raise exception using errcode = 'TFAIL', message = 'FALHOU: operador apagou um registro';
+  exception when insufficient_privilege then ok := ok + 1;
+  end;
+  delete from public.pessoas where id = p_alm;
+  get diagnostics n = row_count;
+  if n <> 0 then raise exception using errcode = 'TFAIL', message = 'FALHOU: operador apagou cadastro de pessoa'; end if;
+  ok := ok + 1;
+
   -- fotos: envia com nome certo; nome fora do padrão, não; e não apaga
   insert into storage.objects (bucket_id, name, owner_id)
   values ('fotos', pasta || gen_random_uuid() || '-p.jpg', u_op::text);
@@ -303,6 +336,54 @@ begin
     raise exception using errcode = 'TFAIL', message = 'FALHOU: cancelou duas vezes';
   exception when sqlstate 'P0001' then ok := ok + 1;
   end;
+
+  -- vistoria: o saldo vira o contado e a diferença fica registrada (sem pessoa nem frota)
+  insert into public.movimentacoes (tipo, material_id, quantidade, contado, retirante_id, frota_id)
+  values ('ajuste', m_graxa, 999, 12, p_mec, f_433) returning id into n;
+  select quantidade || '|' || saldo_antes || '|' || coalesce(retirante_id::text, '-') || '|' || coalesce(frota_id::text, '-')
+    into t from public.movimentacoes where id = n;
+  if t <> '2.000|10.000|-|-' then raise exception using errcode = 'TFAIL', message = 'FALHOU: vistoria gravou ' || t; end if;
+  select saldo into v from public.estoque where id = m_graxa;
+  if v <> 12 then raise exception using errcode = 'TFAIL', message = 'FALHOU: saldo depois da vistoria = ' || v; end if;
+  insert into public.movimentacoes (tipo, material_id, quantidade, contado) values ('ajuste', m_graxa, 0, 12);
+  select tipo || '|' || quantidade || '|' || registrado_por_nome into t from public.historico
+   where material_id = m_graxa order by id desc limit 1;
+  if t <> 'ajuste|0.000|T Admin' then raise exception using errcode = 'TFAIL', message = 'FALHOU: vistoria que confere: ' || t; end if;
+  ok := ok + 3;
+
+  -- apagar de vez: só com motivo, e fica a cópia em apagados
+  begin
+    perform public.apagar_movimentacao(mv_sai, 'oi');
+    raise exception using errcode = 'TFAIL', message = 'FALHOU: apagou sem motivo';
+  exception when sqlstate 'P0001' then ok := ok + 1;
+  end;
+  select public.apagar_movimentacao(id, 'registro de teste') into t from public.movimentacoes where foto = f_ent;
+  if t <> f_ent then raise exception using errcode = 'TFAIL', message = 'FALHOU: apagar devolveu ' || coalesce(t, 'nada'); end if;
+  if exists (select 1 from public.movimentacoes where foto = f_ent) then
+    raise exception using errcode = 'TFAIL', message = 'FALHOU: o registro apagado continua lá';
+  end if;
+  select tabela || '|' || motivo || '|' || (apagado_por = u_admin) || '|' || (dados ->> 'foto') into t
+    from public.apagados order by id desc limit 1;
+  if t <> 'movimentacoes|registro de teste|true|' || f_ent then raise exception using errcode = 'TFAIL', message = 'FALHOU: cópia do apagado: ' || t; end if;
+  select saldo into v from public.estoque where id = m_graxa;
+  if v <> 2 then raise exception using errcode = 'TFAIL', message = 'FALHOU: saldo depois de apagar a entrada = ' || v; end if;
+  ok := ok + 4;
+
+  -- apagar cadastro: o que tem movimentação não sai; o que não tem, sai
+  begin
+    delete from public.pessoas where id = p_mec;
+    raise exception using errcode = 'TFAIL', message = 'FALHOU: apagou pessoa com movimentação';
+  exception when foreign_key_violation then ok := ok + 1;
+  end;
+  insert into public.pessoas (nome) values ('T Sem Uso') returning id into p_sem_uso;
+  delete from public.pessoas where id = p_sem_uso;
+  get diagnostics n = row_count;
+  delete from public.materiais where id = m_filtro;
+  get diagnostics v = row_count;
+  if n <> 1 or v <> 1 then raise exception using errcode = 'TFAIL', message = 'FALHOU: admin não apagou cadastro sem uso'; end if;
+  select count(*) into n from public.apagados where tabela in ('pessoas', 'materiais') and apagado_por = u_admin;
+  if n <> 2 then raise exception using errcode = 'TFAIL', message = 'FALHOU: cópias de cadastro apagado = ' || n; end if;
+  ok := ok + 2;
 
   select count(*) into n from public.listar_acessos() a where a.email like '%@teste.invalid';
   if n <> 4 then raise exception using errcode = 'TFAIL', message = 'FALHOU: listar_acessos trouxe ' || n; end if;
