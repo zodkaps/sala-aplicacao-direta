@@ -9,11 +9,18 @@ import { fileURLToPath } from "node:url";
 import * as T from "../js/texto.js";
 import { filtroHistorico } from "../js/telas/comum.js";
 import * as QR from "../js/qr.js";
+import * as FN from "../supabase/functions/acessos/logica.js";
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), "..");
 let n = 0;
+const pendentes = [];
 function teste(nome, fn) {
-  try { fn(); n += 1; } catch (e) { console.error(`✗ ${nome}\n  ${e.message}`); process.exitCode = 1; }
+  const falhou = (e) => { console.error(`✗ ${nome}\n  ${e.message}`); process.exitCode = 1; };
+  try {
+    const r = fn();
+    if (r && typeof r.then === "function") pendentes.push(r.then(() => { n += 1; }, falhou));
+    else n += 1;
+  } catch (e) { falhou(e); }
 }
 
 teste("normalizar tira acento, caixa e espaço", () => {
@@ -238,6 +245,84 @@ teste("QR: o que se gera se lê de volta (todas as máscaras e tamanhos)", () =>
   assert.match(QR.caminhoSVG([[true, false], [false, true]], 4), /^M4 4h1v1h-1zM5 5h1v1h-1z$/);
 });
 
+// ── a função `acessos` do Supabase (criar conta e senha provisória) ──
+function adminFalso() {
+  const contas = new Map(), perfis = new Map();
+  return {
+    contas, perfis,
+    auth: {
+      admin: {
+        async createUser({ email, password, email_confirm, user_metadata }) {
+          if ([...contas.values()].some((c) => c.email === email)) {
+            return { data: null, error: { status: 422, message: "A user with this email address has already been registered" } };
+          }
+          const id = crypto.randomUUID();
+          contas.set(id, { email, password, email_confirm });
+          perfis.set(id, { id, nome: user_metadata.nome, papel: "pendente" });
+          return { data: { user: { id } }, error: null };
+        },
+        async updateUserById(id, { password }) {
+          const c = contas.get(id);
+          if (!c) return { data: null, error: { message: "User not found" } };
+          c.password = password;
+          return { data: {}, error: null };
+        },
+      },
+    },
+    from() {
+      return {
+        update: (campos) => ({ eq: async (_c, id) => { if (perfis.has(id)) Object.assign(perfis.get(id), campos); return { error: null }; } }),
+        select: () => ({ eq: (_c, id) => ({ maybeSingle: async () => ({ data: perfis.has(id) ? { id } : null, error: null }) }) }),
+      };
+    },
+  };
+}
+
+teste("função acessos: cria a conta já com o acesso, e recusa o que não serve", async () => {
+  const a = adminFalso();
+  const ok = await FN.tratar({ acao: "criar", email: " Karla@Exemplo-Teste.com.br ", nome: "  Karla   Teste ", senha: "Kpwzr48273", papel: "operador" }, a);
+  assert.equal(ok.status, 200);
+  const conta = a.contas.get(ok.corpo.id);
+  assert.equal(conta.email, "karla@exemplo-teste.com.br");
+  assert.equal(conta.email_confirm, true, "a conta já nasce confirmada");
+  assert.deepEqual(a.perfis.get(ok.corpo.id), { id: ok.corpo.id, nome: "Karla Teste", papel: "operador" });
+  assert.equal((await FN.tratar({ acao: "criar", email: "karla@exemplo-teste.com.br", nome: "Outra", senha: "Abcd12345", papel: "consulta" }, a)).status, 409);
+  for (const [pedido, msg] of [
+    [{ email: "sem-arroba", nome: "Fulano", senha: "Abcd12345", papel: "consulta" }, /e-mail/],
+    [{ email: "f@exemplo-teste.com.br", nome: "F", senha: "Abcd12345", papel: "consulta" }, /nome/],
+    [{ email: "f@exemplo-teste.com.br", nome: "Fulano", senha: "Abcd12345", papel: "pendente" }, /acesso/],
+    [{ email: "f@exemplo-teste.com.br", nome: "Fulano", senha: "Abcd12345", papel: "chefe" }, /acesso/],
+    [{ email: "f@exemplo-teste.com.br", nome: "Fulano", senha: "Ab12", papel: "consulta" }, /8 caracteres/],
+    [{ email: "f@exemplo-teste.com.br", nome: "Fulano", senha: "abcdefghij", papel: "consulta" }, /letras e números/],
+  ]) {
+    const r = await FN.tratar({ acao: "criar", ...pedido }, a);
+    assert.equal(r.status, 400, JSON.stringify(pedido));
+    assert.match(r.corpo.erro, msg);
+  }
+  assert.equal(a.contas.size, 1, "nada além da primeira conta foi criado");
+});
+
+teste("função acessos: senha provisória para quem já tem conta", async () => {
+  const a = adminFalso();
+  const { corpo } = await FN.tratar({ acao: "criar", email: "b@exemplo-teste.com.br", nome: "Bia", senha: "Abcd12345", papel: "consulta" }, a);
+  assert.equal((await FN.tratar({ acao: "senha", id: corpo.id, senha: "Nova12345x" }, a)).status, 200);
+  assert.equal(a.contas.get(corpo.id).password, "Nova12345x");
+  assert.equal((await FN.tratar({ acao: "senha", id: corpo.id, senha: "curta1" }, a)).status, 400);
+  assert.equal((await FN.tratar({ acao: "senha", id: "nao-e-uuid", senha: "Nova12345x" }, a)).status, 400);
+  assert.equal((await FN.tratar({ acao: "senha", id: crypto.randomUUID(), senha: "Nova12345x" }, a)).status, 404);
+  assert.equal((await FN.tratar({ acao: "apagar-tudo" }, a)).status, 400);
+});
+
+teste("senha provisória gerada sempre passa na regra (a mesma no site e na função)", () => {
+  for (let i = 0; i < 300; i++) {
+    const s = T.gerarSenha();
+    assert.equal(T.senhaFraca(s), "", s);
+    assert.equal(FN.senhaFraca(s), "", s);
+    assert.ok(!/[ilo]/i.test(s.slice(1, 5)), s);
+  }
+  for (const s of ["", "Ab1", "abcdefgh", "12345678", "a".repeat(80) + "1", "Abcd1234"]) assert.equal(T.senhaFraca(s), FN.senhaFraca(s), s);
+});
+
 // ── o service worker guarda todos os arquivos do site ──
 function arquivos(dir) {
   return readdirSync(dir).flatMap((f) => {
@@ -288,4 +373,5 @@ teste(":hover só dentro de @media (hover: hover)", () => {
   assert.ok(!css.slice(0, i).includes(":hover"), ":hover fora do @media");
 });
 
+await Promise.all(pendentes);
 console.log(process.exitCode ? `\nfalhou (${n} passaram)` : `✓ ${n} testes de unidade passaram`);

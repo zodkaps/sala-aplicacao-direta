@@ -169,9 +169,30 @@ export function lerListaDeFrotas(texto) {
   return frotas;
 }
 
+/** "" se a senha serve; senão, o porquê. A mesma regra da função `acessos`
+ *  do Supabase (supabase/functions/acessos/logica.js). */
+export function senhaFraca(s) {
+  const t = String(s ?? "");
+  if (t.length < 8) return "A senha precisa ter pelo menos 8 caracteres.";
+  if (t.length > 72) return "A senha pode ter no máximo 72 caracteres.";
+  if (!/[A-Za-z]/.test(t) || !/[0-9]/.test(t)) return "Use letras e números na senha.";
+  return "";
+}
+
+/** Senha provisória fácil de ditar: uma maiúscula, quatro minúsculas e cinco
+ *  números, sem as letras que se confundem (i, l, o). Ex.: "Kpwzr48273". */
+export function gerarSenha() {
+  const mai = "ABCDEFGHJKMNPQRSTUVWXYZ", min = "abcdefghjkmnpqrstuvwxyz", num = "23456789";
+  const sorte = (n) => { const a = new Uint32Array(1); crypto.getRandomValues(a); return a[0] % n; };
+  let s = mai[sorte(mai.length)];
+  for (let i = 0; i < 4; i++) s += min[sorte(min.length)];
+  for (let i = 0; i < 5; i++) s += num[sorte(num.length)];
+  return s;
+}
+
 export const PAPEIS = {
   pendente: "Aguardando liberação",
-  consulta: "Só consulta",
+  consulta: "Só consulta (supervisor)",
   operador: "Registra entradas e saídas",
   admin: "Administrador",
 };
